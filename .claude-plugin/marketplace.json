@@ -1,0 +1,18 @@
+{
+  "name": "uncompany",
+  "owner": { "name": "UnCompany", "url": "https://github.com/uncompany-ai" },
+  "plugins": [
+    {
+      "name": "unbound",
+      "source": "./plugins/unbound",
+      "description": "File-native sales-execution agent for Claude Cowork — freemium tier: the run-unbound daily orchestrator plus the standalone setup-unbound, connect-tools, and collect-tasks skills. A subtractive cut of the base with pro-only features removed. Built from core v1.0.0-12-gd4b523e.",
+      "category": "sales"
+    },
+    {
+      "name": "unbound-demo",
+      "source": "./plugins/unbound-demo",
+      "description": "File-native sales-execution agent for Claude Cowork — demo tier: the complete pro skill set, registered under demo identities (run-unbound-demo, setup-unbound-demo, connect-tools-demo, collect-tasks-demo) so it installs alongside the standard pack rather than replacing it, running fully offline against a bundled fixture corpus, plus the reset-demo workspace bootstrap/reset skill. Every external read resolves to bundled fixture data, so a complete run needs zero connectors, zero credentials and zero network calls. Not a subtractive cut — the same corpus with the demo runtime bindings selected at build time. Built from core v1.0.0-12-gd4b523e.",
+      "category": "sales"
+    }
+  ]
+}

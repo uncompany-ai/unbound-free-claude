@@ -1,0 +1,49 @@
+tasks:
+  - id: t1
+    title: "Send post-call follow-up to Halvorsen & Pike (approval path in writing + the baseline offer)"
+    type: followup_email
+    priority: 1
+    rationale: "Stage is technical-validation and Rohan is the gate. His objection is not the drafting but the sending, and he will be asked by compliance before he asks us — so the follow-up has to state the approval boundary plainly, in writing, and attach the overview Dana's team can read early rather than as a late gate."
+    evidence: "transcript: 'My worry is not the drafting. It is that something reads a client thread and then sends. Show me where the approval sits, and what it can and cannot touch' (Rohan) / 'Dana signs off on governance' (Eleanor)"
+    context:
+      recipients: ["Eleanor Voss (VP revenue operations)", "cc: Rohan Mehta (principal systems engineer)"]
+      asks:
+        - "State the boundary in writing: it drafts, it never sends, and every action waits on one human approval in one pass"
+        - "Confirm it brings no logins and opens no connections of its own — it reads through the access the existing AI seat already has, so it is not a second AI vendor to review"
+        - "Share the ownership overview so Dana's team reads it early rather than at a late gate"
+        - "Offer the baseline week, and ask Rohan for the threshold he will accept as proof, up front"
+      asset_hint: "Security & Ownership Overview (assets.md, technical-validation)"
+      next_call:
+        purpose: "Working session to lock the evaluation scope and the proof threshold, with the private-client advisors in the room"
+        required_attendees: ["Eleanor Voss", "Rohan Mehta", "Nadia Ellis (UnCompany)"]
+    proposed_action: draft_email
+    status: not-done
+  - id: t2
+    title: "Prepare the time-boxed install scope with pass and fail criteria"
+    type: prepare_demo
+    priority: 2
+    rationale: "Technical-validation exits when a time-boxed install meets criteria agreed before it started. Writing the scope — sources read, mandates in scope, the desk it is installed for, the close-out date — is what stops the evaluation drifting into an open-ended pilot. It waits on the baseline decision, because the pass criteria are expressed against the baseline."
+    evidence: "transcript: 'what do you need from us to run the evaluation?' (Eleanor) / 'a threshold from Rohan, up front — the number he will accept as proof' (Nadia)"
+    context:
+      success_criteria: "The threshold Rohan names, measured against the baseline week on the private-client desk; the approval path holds under Dana's review; no new logins and no new connections opened"
+      deferred_reason: "Pending the baseline week and Rohan's stated threshold — the pass criteria cannot be written before the number they are measured against exists."
+    proposed_action: prep_demo
+    status: deferred
+  - id: t3
+    title: "Bring security in early with the ownership overview ahead of Dana's review"
+    type: internal
+    priority: 3
+    rationale: "Governance arriving as a late gate is how evaluations at firms like this die. Sending the ownership overview across before the formal review turns Dana from a gate into a reader, and it is a quick internal action rather than something to schedule."
+    evidence: "context.md — Dana signs off on governance; messaging.md objection handling: bring security into technical-validation early rather than meeting them as a late gate."
+    context:
+      note: "Sent the ownership overview across ahead of Dana's review so her team reads the approval path, the no-new-logins boundary, and the config-ownership position early. Flagged to Eleanor that it has gone."
+    proposed_action: none
+    status: done
+dropped:
+  - "Peer durability proof send — premature at technical-validation; what convinces Rohan is the approval path in writing and a threshold measured on their own desk, not a comparable operator's numbers."
+open_questions:
+  - "What threshold will Rohan accept as proof, and is it expressed in reclaimed minutes, approval rate, or both?"
+  - "Will the four private-client advisors log a baseline week, and does Eleanor need Grant to ask them rather than her?"
+next_step:
+  proposed: true
+  description: "Hold a working session the week of June 22 with Eleanor and Rohan to lock the evaluation scope and the proof threshold; offer candidate times for the required attendees."

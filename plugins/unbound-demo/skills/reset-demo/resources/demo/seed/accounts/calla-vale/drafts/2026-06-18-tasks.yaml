@@ -1,0 +1,46 @@
+tasks:
+  - id: t1
+    title: "Send post-review follow-up to Calla & Vale (what the first install gave back + the store-team extension)"
+    type: followup_email
+    priority: 1
+    rationale: "Stage is negotiation and the review opened the second desk. A recap that states plainly what the wholesale install gave back — eight reps approving drafts daily, nobody asking for a new login — and frames the store team as the same loop against a different book keeps the extension moving toward paper, with the pricing guide attached so Renata has the whole commercial picture in one place."
+    evidence: "transcript: 'the eight reps on the wholesale desk are approving drafts daily now' (Renata) / 'nobody has asked for a new login, which is the part my ops lead did not believe' (Renata)"
+    context:
+      recipients: ["Renata Cordova (VP commercial operations)", "cc: Malcolm Byrd (wholesale desk lead)"]
+      asks:
+        - "Confirm the recap for the internal case: eight wholesale reps approving drafts daily, no new logins requested, follow-up turnaround down"
+        - "Frame the extension: the store team runs the same loop against a different book, inside the seats they already have"
+        - "Attach the pricing guide covering what the install fee includes for a second team, what it does not, and the named re-engagement price"
+        - "Confirm the terms call the week of June 22"
+      asset_hint: "Install Fee & Re-engagement Pricing Guide (assets.md, negotiation)"
+    proposed_action: draft_email
+    status: done
+  - id: t2
+    title: "Assemble the store-team install scope and terms"
+    type: create_proposal
+    priority: 2
+    rationale: "Negotiation needs the terms on paper. The document has to say what the second install covers, what the fee is for the store team, when the engagement closes, and what re-engagement costs when the way they sell changes next season — so procurement reviews a bounded, complete commercial picture rather than a first invoice."
+    evidence: "transcript: 'I need two things in writing. First, what the install fee covers for a second team and what it does not. Second, how re-engagement is priced when we change the way we sell next season' (Renata)"
+    context:
+      scope: "Store-team install scope and fee, the close-out date, and the named re-engagement price — stated so the year-two number is answerable in one line"
+      audience: "Renata (economic buyer) and Aaron Pruitt (procurement)"
+    proposed_action: draft_proposal
+    status: done
+  - id: t3
+    title: "Confirm the store-team rollout dates with the install lead before pricing goes to procurement"
+    type: internal
+    priority: 3
+    rationale: "The store-team rollout has to line up with the season, and the terms depend on when the install actually runs. Confirming the dates internally before commercial paper goes out stops the proposal promising a window the install cannot hold."
+    evidence: "transcript: 'before I take the store-team rollout upstairs' (Renata) — the rollout window is the dependency, not the price."
+    context:
+      note: "Confirm with the install lead: the store-team install window against the season, whether the wholesale desk needs anything during it, and that nothing in the first engagement is still open before the second is priced."
+    proposed_action: none
+    status: not-done
+dropped:
+  - "Peer proof send — Calla & Vale is the reference here; the value recap is first-party and stronger than anyone else's numbers at this stage."
+open_questions:
+  - "How many store-team sellers are in scope for the first install window, and is it all 140 stores or a lead region?"
+  - "Does the second install need a fresh procurement review from Aaron, or does it sit under the existing agreement?"
+next_step:
+  proposed: true
+  description: "Hold the terms call the week of June 22 with Renata and Malcolm, with Aaron looped in for the commercial review; offer candidate times for the required attendees."

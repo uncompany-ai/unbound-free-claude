@@ -1,0 +1,53 @@
+tasks:
+  - id: t1
+    title: "Send post-session follow-up to Brightwater (install scope + what each side owes)"
+    type: followup_email
+    priority: 1
+    rationale: "Stage is technical-validation and the evaluation is the gate. A short recap that fixes the install scope, names what we are waiting on from Femke, and offers the baseline week as a parallel track keeps the evaluation moving without letting it wait on an internal ask."
+    evidence: "transcript: 'I will send the org IDs, the mapping for the three stage fields, and two example opportunity records' (Femke) / 'Let me take it to the desk leads' (Lars, on the baseline week)"
+    context:
+      recipients: ["Lars Vandenberg (Brightwater, revenue operations lead)", "Femke Janssen (Brightwater, Salesforce owner)"]
+      asks:
+        - "Confirm the install scope: the agent reads the call and the thread, drafts the next move on each open deal, and the seller approves in one pass inside the seat they already open"
+        - "Confirm the write side routes by masthead, and that Femke is sending the three org IDs, the stage-field mapping, and two example opportunity records"
+        - "Offer the baseline week as a parallel track — the install does not wait on it"
+        - "Confirm the working session with the desk leads ahead of the in-person deep-dive"
+      next_call:
+        purpose: "Working session with the desk leads to walk the first drafts against real open deals, before the in-person deep-dive"
+        required_attendees: ["Lars Vandenberg", "Femke Janssen", "Nadia Ellis (UnCompany)"]
+    proposed_action: draft_email
+    status: done
+  - id: t2
+    title: "Prepare the baseline-week measurement plan for the desk leads"
+    type: create_one_pager
+    priority: 2
+    rationale: "Lars half-believes the post-call admin is not costing what the sellers claim and asked to be shown. A measurement plan that fixes the baseline week, names exactly what gets counted, and says who logs it is what turns that objection into an agreed number instead of an argument — and it is what he asked to read before putting the ask to thirty-one sellers."
+    evidence: "transcript: 'I half-believe it is not costing us as much as they claim... You would have to show me it is' (Lars) / 'put that worksheet in the recap. I want to read what it measures before I ask thirty-one people to log a baseline week' (Lars)"
+    context:
+      audience: "Lars, the three desk leads, and the thirty-one sellers who will log the baseline week"
+      angle: "Baseline week before anything goes live, then approval rate and minutes reclaimed across the first live week, side by side — agreed before anyone starts so the goalposts cannot move afterwards"
+      pain_point: "The admin cost is asserted by the sellers and disbelieved by the person who has to fund the install"
+      source_pointers: ["Approval-Rate & Minutes-Reclaimed Worksheet (assets.md, technical-validation)"]
+    proposed_action: ideate_content
+    status: not-done
+  - id: t3
+    title: "Settle the Salesforce write scope with Femke before the working session"
+    type: internal
+    priority: 3
+    rationale: "The write side routes by masthead across three orgs, and the three stage fields the desk uses are unreliable today. Agreeing exactly which fields the agent proposes an update to — and which it never touches — before the working session keeps the first real-deal walkthrough about the drafts rather than about permissions."
+    evidence: "transcript: 'I need to know what touches Salesforce' (Femke) / 'the three stage fields we actually use are wrong more often than they are right' (Femke)"
+    context:
+      note: "Confirm with Femke: the three org IDs and the per-masthead routing, the exact stage-field mapping, and the read-only boundary — the agent proposes the update and the seller approves it, so nothing is written without a human in the pass."
+    proposed_action: none
+    status: not-done
+dropped:
+  - "answer_questions task — the open items (baseline sign-off from the desk leads, when the org IDs land) are Brightwater-internal decisions rather than questions for us to answer; surfaced as open_questions and folded into the t1 asks."
+  - "Send the org-ID and field-mapping documentation — Femke committed to sending this from the Brightwater side, so it is not our action to carry."
+open_questions:
+  - "Will the desk leads sign off on thirty-one sellers logging a baseline week, and in which week?"
+  - "Which of the three stage fields is authoritative when the three mastheads disagree on the same account?"
+  - "Does the in-person deep-dive still need to happen if the working session on real open deals lands well?"
+  - "Who reads the number at the end — Lars alone, or Lars with the COO in the room?"
+next_step:
+  proposed: true
+  description: "Send the recap-and-scope follow-up to Lars and Femke, and offer times for a working session with the desk leads to walk the first drafts against real open deals ahead of the in-person deep-dive."

@@ -1,0 +1,6 @@
+{
+  "name": "unbound",
+  "displayName": "Unbound (Free)",
+  "description": "File-native sales-execution agent for Claude Cowork — freemium tier: the run-unbound daily orchestrator plus the standalone setup-unbound, connect-tools, and collect-tasks skills. A subtractive cut of the base with pro-only features removed.",
+  "author": { "name": "UnCompany" }
+}

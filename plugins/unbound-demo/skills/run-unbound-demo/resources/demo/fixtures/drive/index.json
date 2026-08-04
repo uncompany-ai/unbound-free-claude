@@ -1,0 +1,37 @@
+[
+  {
+    "ref": "drv_identity_resolution_onepager",
+    "name": "Revenue Rewiring Diagnostic (1-pager)",
+    "terms": ["rewiring diagnostic", "diagnostic", "one-pager", "1-pager", "where the selling time goes", "post-call admin", "the record decays", "discovery"]
+  },
+  {
+    "ref": "drv_retail_customer360_demo",
+    "name": "Recorded Walkthrough — Agents in the AI Seat",
+    "terms": ["recorded walkthrough", "walkthrough", "recording", "ai seat", "reads the call", "writes the slate", "approve and send", "retail", "demo"]
+  },
+  {
+    "ref": "drv_match_rate_worksheet",
+    "name": "Approval-Rate & Minutes-Reclaimed Worksheet",
+    "terms": ["approval rate", "minutes reclaimed", "baseline week", "worksheet", "admin minutes", "prove the time back", "measurement plan", "technical-validation"]
+  },
+  {
+    "ref": "drv_security_architecture",
+    "name": "Security & Ownership Overview",
+    "terms": ["security", "ownership", "governance review", "no new logins", "who holds the keys", "approval path", "nothing sends uninvited", "technical-validation"]
+  },
+  {
+    "ref": "drv_travel_roi_casestudy",
+    "name": "Durability Proof — Still Running Six Months On",
+    "terms": ["durability proof", "case study", "peer proof", "six months on", "still running", "exec review", "travel", "hospitality", "proposal"]
+  },
+  {
+    "ref": "drv_pilot_scope_template",
+    "name": "Three-Day Install Scope & Success Criteria",
+    "terms": ["install scope", "three-day install", "success criteria", "scope template", "exit criteria", "time-boxed", "technical-validation"]
+  },
+  {
+    "ref": "drv_pricing_packaging",
+    "name": "Install Fee & Re-engagement Pricing Guide",
+    "terms": ["install fee", "pricing", "packaging", "commercial terms", "re-engagement", "no rent", "year-two number", "negotiation"]
+  }
+]
