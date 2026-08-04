@@ -1,17 +1,16 @@
 # Unbound — Cowork plugin marketplace
 
 This repository is the public Claude Cowork marketplace for **Unbound**, the file-native
-sales-execution agent by [UnCompany](https://uncompany.ai). It serves two plugins:
+sales-execution agent by [UnCompany](https://uncompany.ai). It serves the free tier:
 
 | Plugin | Install as | What it is |
 | --- | --- | --- |
 | Unbound (Free) | `unbound@uncompany` | The freemium tier: the `run-unbound` daily orchestrator plus the standalone setup, connection-check and task-roundup skills. |
-| Unbound (Demo) | `unbound-demo@uncompany` | The demo tier: the complete skill set running fully offline against a bundled fictional fixture corpus — zero connectors, zero credentials. |
 
 ## Install
 
 1. In Claude Cowork: **Customize → Plugins → Add marketplace**, then enter `uncompany-ai/unbound-free`.
-2. Install `unbound@uncompany` — or `unbound-demo@uncompany` for the offline demo.
+2. Install `unbound@uncompany`.
 
 Plugin support in Cowork is in beta and available on paid Claude plans.
 
@@ -23,7 +22,7 @@ this repository, so every publish here is detectable as a new version.
 
 ## Provenance
 
-The published trees are the gate-verified build artifacts of core `v1.0.0-12-gd4b523e`.
+The published trees are the gate-verified build artifacts of core `v1.0.0-15-ge2ffafc`.
 
 ## Maintenance
 
