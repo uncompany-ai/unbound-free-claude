@@ -22,7 +22,7 @@ this repository, so every publish here is detectable as a new version.
 
 ## Provenance
 
-The published trees are the gate-verified build artifacts of core `v1.0.0-24-g0d05913`.
+The published trees are the gate-verified build artifacts of core `v1.1.0`.
 
 ## Maintenance
 
