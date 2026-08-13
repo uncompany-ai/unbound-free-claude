@@ -13,7 +13,8 @@ is owned by the skills it composes.
 
 ## Reads
 
-- `state/run-state.yaml` — `last_run` (ISO 8601 with offset, required), `timezone` (IANA, required), optional `scan_window`; and the optional `work` list of open cycle records, read at Step 3.2's detect to tell whether the selected item is mid-cycle. The durable `events` list is read by the slots that own it — `build-slate` at upsert, `fetch-transcript` at evidence recovery.
+- `state/run-state.yaml` — `last_run` (ISO 8601 with offset, required), `timezone` (IANA, required), optional `scan_window`; the optional `context_stamp`, read at Step 1.5's compare; and the optional `work` list of open cycle records, read at Step 3.2's detect to tell whether the selected item is mid-cycle. The durable `events` list is read by the slots that own it — `build-slate` at upsert, `fetch-transcript` at evidence recovery.
+- `resources/context/STAMP` and `resources/context/{process,messaging,assets}.md` — bundled-resource reads at Step 1.5, performed by `managed-context-apply`; an absent `STAMP` is the unmanaged path. Neither is capability-mediated: no `runtime/tool-bindings.md` row, and nothing for `connect-tools` to report. The bundle ships this skill the shared apply resource and its bodies now too, so this loop can apply new context itself rather than only detecting it.
 - `drafts/<plan_date>-tasks.yaml` — read-only, at Step 3.2's rehydrate: the pinned plan of an interrupted cycle, read verbatim and never rewritten from here.
 - `state/feedback-log.jsonl` — read-only and additive-only, at Step 3.2's rehydrate: the cycle's standing verdicts, filtered to the item and to the lines whose `ts` is at or after the record's `started_at`. This is the only beat in the run loop that reads the log; every line appended to it is still `work-account`'s `capture-feedback`.
 - In-memory outputs of every downstream skill it composes.
@@ -26,19 +27,36 @@ is owned by the skills it composes.
   - Do not recreate, reshape, or write the file.
   - If the file is missing, or is not valid YAML with both `last_run` and `timezone`, stop and
      tell the rep — never invent values or create the file.
-2. Resolve `scan_window` in `timezone`:
-  - Absent or `now` → unbounded: pass no upper edge to `discover-events`.
-  - `<n>h`/`<n>d` → `upper_edge = min(last_run + W, now)`, carried as full ISO 8601 with offset.
+2. Parse and validate `scan_window` in `timezone`; do not sample the clock yet:
+  - Absent or `now` → retain unbounded mode.
+  - `<n>h`/`<n>d` → retain the parsed duration `W` for the final pre-query beat.
   - Unparseable → stop and surface to the rep; never guess, never silently fall back to `now`.
+
+**1.5 — Managed context apply (slot).** Runs after Step 1's state read, before Step 2's discovery — see Invariants (managed context).
+
+1. **Invoke** `managed-context-apply` (`skills/pipeline/managed-context-apply.md`) in full — it is the sole owner of detect → compare → note → apply whole → stamp → report replaced edits → report stage-rename fallout → state the asset-link assumption; this beat restates none of its clauses and never enters `setup-unbound`'s steps 1–8.
+2. **Consume** the returned report unchanged.
+  - `unmanaged` or `current` ⇒ no write occurred: end here in silence.
+  - `applied` ⇒ narrow the report to silence: it renders only where it names an account (the stage-rename fallout), never the "none do" line, and the asset-link statement belongs to `setup-unbound`'s own entry and does not render here.
+  - `failed` ⇒ the tree keeps its prior `context_stamp`.
+  - A clean apply on an untouched tree therefore emits nothing at all.
+3. **Continue** into Step 2 whichever way step 1.5.2 resolved, including on an apply that failed.
 
 **2 — Compose the run.** Hand off to these skills in this fixed order. The discovery half (slots
 1–3) carries the in-memory bag of source-discriminated `discovered_events` (each `{ event_id,
 source: "call"|"email", external_ref, occurred_at, ... }`); everything from selection on works the
 one item the rep picked.
 
+**Final pre-query beat.** After Step 1.5 has returned and immediately before slot 1, sample the
+current instant exactly once as full ISO 8601 with offset in `timezone`. Resolve the immutable
+in-memory `discovery_until`: unbounded mode uses that sample; duration mode uses the earlier of
+`last_run + W` and that same sample. If the resolved interval is invalid, stop before either source
+query. Carry the exact scalar unchanged through the session; no later clock read participates in
+the discovery watermark.
+
 | Slot | Skill | What it contributes |
 | --- | --- | --- |
-| 1 | `discover-events` | Find events in the discovery window; pass `last_run`, `timezone`, and (only when bounded) the resolved `upper_edge`. |
+| 1 | `discover-events` | Find events in the discovery window; always pass `last_run`, `timezone`, and the exact resolved `discovery_until`. |
 | 2 | `classify-work` | Route each event to its owning account or project, honoring upstream `suggested_slug` hints. |
 | 3 | `build-slate` | Upsert each discovered event into `events` and present the annotated, unranked slate derived from the pending ones. |
 | — | **Selection** | The rep picks one item (Step 3 below). A beat, not a slot: it retrieves nothing and ships no skill file. |
@@ -110,7 +128,10 @@ why this skill's Writes section is unchanged by this step:
   and its own behavior when that source fails:
   - **Plan** — read the `plan_date` file **verbatim**; that is the cycle's plan. **No synthesis runs
     on a resume**: the plan is read off disk, never re-derived, so no second dated tasks file can
-    appear.
+    appear. **Carry-forward therefore never fires on a resume** — the carry matrix belongs to
+    `work-account` Step 2, and Step 2 does not run here. That is correct rather than an omission:
+    the plan the rep is resuming is the plan they left, and work carried into it mid-cycle would
+    be work they never triaged.
   - **Evidence** — re-fetch each of the record's `event_ids[]` members by its stored `external_ref`,
     `source: "call"` → `transcript.get`, `source: "email"` → `email.get_thread`. That is the same
     recovery path slot 4's `fetch-transcript` owns — invoked by reference here, with none of its
@@ -127,7 +148,10 @@ why this skill's Writes section is unchanged by this step:
   - **`crm_update`** — re-derive it by invoking `work-account` **Step 6.5 CRM UPDATE** by name,
     evaluate-only, over the rehydrated evidence and the item's current context.md. That step already
     states its object is handed back in memory and is not written there, which is exactly what makes
-    it safe inside a step that writes nothing; its clauses are not restated here.
+    it safe inside a step that writes nothing; its clauses are not restated here. Qualification
+    capture therefore self-heals on resume: an answer persisted before interruption evaluates
+    captured from current context.md, falls out of the re-derived `qualification.gaps[]`, and only
+    the remaining gaps reach Step 5.
 - **New events, counted and stated — never folded.** Pending events for this `(namespace, slug)`
   that are **not** in the record's `event_ids[]` are **counted and stated plainly** — "<N> new
   events for <Name> — next cycle after close-out" — and are **never** folded into the in-flight
@@ -268,6 +292,22 @@ do **not** re-review tasks here.
   (this is where it surfaces — it took no turn in the walk); for a rejected or no-verdict task,
   its outcome stated plainly, never silently skipped. No re-ranking, no re-presenting of full
   task bodies, no re-review — the review already happened at Step 3.5.
+  - **A carried task names its origin on that same line** — the plan date it came from and its
+    carry count, read off the `carried_from` block the plan carries ("carried from 2026-07-28,
+    2nd carry"), alongside the verdict and execution result every other task gets. A carried task
+    is **never** silently omitted from the recap: it is old work resurfacing, and how long it has
+    been resurfacing is the fact the rep is owed. This is one more clause on the line, not a
+    second presentation of the task — the no-re-review rule above is unchanged.
+  - **A prior task whose turn the loop already spent gets a reminder line and no card.**
+    `work-account`'s carry matrix emits no task for that case and hands its reminders back with
+    the plan; state each as one line naming the **turn date** — "given its turn 2026-07-28 —
+    draft `2026-07-28-email.md`, not marked sent" — and name an artifact file **only** where the
+    handback names one, degrading to "given its turn 2026-07-28 — no artifact written" where it
+    does not. Never derive an artifact claim from the marker alone: `handled_on` is set for a
+    clean handler no-op too (Step 4), so it says the turn was spent and nothing more.
+    - **Informational only:** no `review.collect` call, no verdict, no `capture-feedback` line;
+      silence has no meaning here. It stays prose because a card would invite an accept that
+      re-drafts what the spent turn already produced.
 - **Act-ready draft + its verdict — one combined gate.** When the loop produced an email draft,
   the draft and the decision on it arrive on the **same** surface; no separate checkpoint follows
   it:
@@ -305,25 +345,40 @@ do **not** re-review tasks here.
   - **Silence after a re-render ends it:** write nothing further, leave the draft at its last
     applied state, and state that in the recap as abandoned — never as accepted.
   - When no draft exists, present nothing here.
-  - **Open questions** stay their own in-chat beat: when `open_questions[]` (from work-account
-    Step 5) is non-empty, call the logical `review.collect(checkpoint_view)` carrying only that
-    list (`items: []`); when it is empty, skip the call entirely — never present an empty
-    checkpoint. Surface the returned open_answers in chat and hold them in-session — write
-    nothing for them.
+  - **Open questions + qualification gaps stay one in-chat beat.** Assemble one
+    `checkpoint_view = { items: [], open_questions: <work-account Step 5 list>,
+    qualification_gaps: <crm_update.qualification.gaps[] or []> }`. When either list is
+    non-empty, make exactly one logical `review.collect(checkpoint_view)` call carrying both;
+    when both are empty, skip the call entirely — never present an empty checkpoint.
+    On an `executed` resume, use the gaps from Step 3.2's by-name Step 6.5 re-derivation, so an
+    already-persisted answer is never re-asked and only remaining gaps appear.
+    Surface returned `open_answers[]` in chat and hold them in-session — write nothing for
+    them. Each returned `qualification_answer` with a non-empty `answer` is an account fact:
+    route that entry through exactly one `capture-qualification(namespace, slug, answers[])`
+    invocation (a singleton `answers[]` for that entry). An empty answer or an unanswered gap
+    invokes nothing and writes nothing. The checkpoint only collects; it never writes either
+    answer kind itself.
+    - An explicit rep-stated qualification fact during close-out may route through the same
+      `capture-qualification` procedure by name. Step 18 owns its ambiguity and rep-driven-only
+      rules; this is never volunteered as a second structured ask.
 - **CRM Updates — final sub-beat.** After the email-draft verdict beat completes, invoke
   `write-crm` with the in-memory `crm_update` object `work-account` handed back (the same in-memory
   channel `next_step` rides) plus the selected item's `(namespace, slug)`. `write-crm` owns the
-  RESOLVE → APPLY fork: it persists `drafts/YYYY-MM-DD-crm-update.md` and renders via
-  `render.crm_update` on its simulate branch (the only live path while `crm.write` is unbound).
+  sub-beat's persist and render: on its simulate path it persists
+  `drafts/YYYY-MM-DD-crm-update.md` and renders via `render.crm_update`. Which path it takes is
+  `write-crm`'s to resolve, never the orchestrator's to assume.
   - The orchestrator does **not** render or persist the CRM update inline — that is `write-crm`'s
     job. It hands off the object and lets `write-crm` complete the sub-beat, then continues.
-  - **Informational only:** `write-crm`'s render is informational — no `review.collect` call, no
-    verdict, no `capture-feedback` line; silence has no meaning here. The email-draft verdict and
-    open-questions flows above are unchanged by this sub-beat.
+  - **No verdict here:** this sub-beat captures nothing — no `review.collect` call, no verdict, no
+    `capture-feedback` line; silence has no meaning here. `write-crm` owns its own render and any
+    conversation it needs with the rep; the orchestrator adds no verdict surface and reads none. The
+    email-draft verdict and open-questions flows above are unchanged by this sub-beat.
   - **On a resume this sub-beat is unconditional** — `write-crm` runs whatever was skipped above,
     and runs on the `crm_update` object the resume re-derived. Its same-date artifact is rewritten
     in place, so re-running it after an interruption is safe, and running it is the only way the
-    close-out completes.
+    close-out completes. Being unconditional is why the beat **repeats work rather than inheriting
+    decisions**: `write-crm` re-derives and re-presents on every resume and never treats a previous
+    run's outcome as already settled.
   - Immediately after `write-crm` hands back, invoke `advance-phase(…, closed)`. That is the
     cycle's terminal transition and the one beat at which this item's events flip; nothing else in
     this step advances the cycle.
@@ -337,20 +392,24 @@ do **not** re-review tasks here.
   presented and selection resolved, where "resolved" means the rep selected an item, the rep
   explicitly declined or deferred every item, or the slate was empty (nothing to select). All
   three paths advance.
-- The new value is the window's upper edge, not the wall-clock time the session ran: bounded
-  (`scan_window` = `<n>h`/`<n>d`) → write the resolved `upper_edge` from Step 1; unbounded
-  (absent or `now`) → write now.
-- Write only `last_run` (full ISO 8601 with offset) in `state/run-state.yaml`; do not touch
+- Write the exact `discovery_until` scalar handed to slot 1, verbatim. Do not read the clock again,
+  reformat, truncate, normalize its offset, or derive a replacement at commit time.
+- Write only `last_run` in `state/run-state.yaml`; do not touch
   `timezone` or any event record. Advancing `last_run` past an un-worked event costs nothing now:
   its `external_ref` is durable, so `fetch-transcript` recovers it whenever the rep gets to it.
 
 ## Writes
 
 - `state/run-state.yaml` — advance `last_run` only, at session end; Step 6 defines the value.
-- Orchestrates (does not itself author) `feedback-log.jsonl` appends, the plan-file rewrites, and
-  the worked item's cycle record and its close-out flip — those writes live in `work-account`'s
-  `capture-feedback` / APPLY-EDIT / promotion / SET-STATUS / ADVANCE-PHASE / MARK-HANDLED, each
-  invoked here by name.
+- Orchestrates (does not itself author) the Step 1.5 managed apply's writes — the three `company/*` files plus run-state's `context_stamp` and `context_applied_at` — owned by `managed-context-apply` and invoked there directly.
+- Orchestrates (does not itself author) the selected item's `context.md` on first encounter
+  (`bootstrap-context`), the upserted `events` records (`build-slate`), `feedback-log.jsonl`
+  appends, the plan-file rewrites, and the worked item's cycle record and its close-out flip, plus
+  qualification-answer updates to the account's `context.md` — those writes live in
+  `work-account`'s `capture-feedback` / APPLY-EDIT / promotion / SET-STATUS / ADVANCE-PHASE /
+  MARK-HANDLED / CAPTURE-QUALIFICATION, each invoked here by name — plus the draft file
+  `draft-followup` owns (its DRAFT phase and its `apply-draft-edit` rewrite) and the simulated CRM
+  draft `write-crm` owns.
 
 ## Invariants
 
@@ -358,12 +417,16 @@ do **not** re-review tasks here.
   (`discover-events` → `classify-work` → `build-slate`) emit **no** rep-facing narration: no
   state-validity line, no `last_run` echo,
   no framing sentence, no per-step status, no "Let me…" preambles, no demo/fixtures commentary,
-  no tool-by-tool play-by-play. The first rep-facing output of a normal run is the slate. Exactly four pre-slate
+  no tool-by-tool play-by-play. The first rep-facing output of a normal run is the slate. Exactly five pre-slate
   outputs stay loud: Step 1 stop conditions, a `discover-events` source-binding failure, an
-  ambiguous-classification ask in `classify-work`, and the empty-slate "nothing new since
-  `<last_run>`" line. Silence covers the happy path only — it never suppresses an error.
-- Drafts and plans only: the rep, not the agent, performs external actions; nothing is ever sent
-  or queued.
+  ambiguous-classification ask in `classify-work`, the empty-slate "nothing new since
+  `<last_run>`" line, and Step 1.5's two apply reports where they name something. Silence covers the happy path only — it never suppresses an error.
+- **Managed context is applied, never negotiated.** Step 1.5 takes no verdict, renders no widget, makes no `review.collect` call, and offers the rep no way to decline — the ownership rule that licenses this is `setup-unbound`'s to state. It is never a reason a rep cannot work: an unreadable `STAMP` is read as unmanaged rather than surfaced as a parse error, and an apply that fails part-way leaves `context_stamp` at its prior value for the next run to retry — Step 1.5's continue clause carries the run past both.
+- Drafts and plans only, and **nothing leaves the machine that the rep did not approve in this
+  session**: no email is ever sent or queued, and the loop itself performs no external action. The
+  one place an external write can occur at all is the Step 5 CRM close-out, which `write-crm` owns
+  and gates on its own explicit per-payload approval — the orchestrator never sends anything, and
+  never carries an approval forward from an earlier beat, item, or run.
 - Never name a concrete UI mechanism (ADR-6): call the logical `review.collect` / `render.*`
   capabilities; the runtime resolves them (interactive or in-chat fallback).
 - Approval gates execution: the Step 3.5 triage submission is the bar — a task executes only on
@@ -387,8 +450,10 @@ do **not** re-review tasks here.
   `tasks`/`dropped`, sets task status, or re-runs synthesis; their only writes are the per-verdict `feedback-log.jsonl`
   appends, the `apply-edit`/promotion plan-file rewrites, and the `advance-phase`/`mark-handled`
   cycle writes (all via `work-account`'s shared procedures), plus the email draft `draft-followup`
-  owns — written by its DRAFT phase and rewritten in place by its `apply-draft-edit`. No new writer
-  exists at either gate.
+  owns — written by its DRAFT phase and rewritten in place by its `apply-draft-edit` — and the
+  account-only qualification updates `work-account`'s CAPTURE-QUALIFICATION owns. The Step 5
+  checkpoint remains a write-free collector: open answers persist nowhere, and qualification
+  persistence routes only through that named authority. No new writer exists at either gate.
 - **An output edit is applied, not merely recorded.** An `edit` verdict on the produced draft
   rewrites the draft file via `draft-followup`'s `apply-draft-edit` before anything is logged; on
   a draft-file write failure the failure is surfaced and the `edit` is never logged. Nothing is
@@ -403,6 +468,10 @@ do **not** re-review tasks here.
   what licenses retrieving nothing before selection. `fetch-transcript` states how the recovery
   works; this loop restates none of it. An empty `evidence[]` on an item that has pending events is
   a fault to surface, never a normal outcome.
+- **The watermark never advances beyond discovery coverage.** Every successful advance writes the
+  exact fixed `discovery_until` that bounded slot 1; activity after that cutoff remains strictly
+  after the next run's `last_run`, including activity arriving during triage, execution, or
+  close-out.
 - Missing evidence is surfaced, never silently dropped, and never blocks: an event whose evidence
   could not be recovered stays selectable and stays in the plan with its gap surfaced. Which
   failures produce a gap, and how each source degrades, are `fetch-transcript`'s to state — read
@@ -417,8 +486,9 @@ do **not** re-review tasks here.
   cases NEXT STEPS completes and Step 6's `last_run` advance proceeds unaffected — the sub-beat
   never blocks close-out.
 - `capture-feedback` is referenced by name (authored in work-account), never re-authored here. So
-  are `advance-phase`, `mark-handled`, and the Step 6.5 CRM evaluation Step 3.2 re-derives on a
-  resume: this skill names the beat each one attaches to and restates no clause of any of them.
+  are `advance-phase`, `mark-handled`, `capture-qualification`, and the Step 6.5 CRM evaluation
+  Step 3.2 re-derives on a resume: this skill names the beat each one attaches to and restates no
+  clause of any of them.
 
 ---
 
@@ -434,10 +504,17 @@ do **not** re-review tasks here.
 > **Side entry (rep-invoked only):** `resources/side-collect-tasks.md` — cross-item task roundup.
 > Never auto-run; invoke only when the rep explicitly requests it. Not part of the single-item loop.
 >
-> **CRM close-out apply (slot 8, internal):** `resources/8-write-crm.md` — the RESOLVE → APPLY (write |
-> simulate) fork invoked by Step 5's NEXT STEPS close-out (row 10) with the in-memory `crm_update`
-> object. Open it yourself at the close-out CRM sub-beat; it owns the simulate-branch draft persist +
-> the `render.crm_update` render. The numbered slot-8 close-out step; never rep-invoked directly.
+> **Managed-context apply (Step 1.5, shared resource):** `resources/managed-context-apply.md` —
+> invoke it directly and in full; it is the sole owner of detect/compare/apply/stamp/report and the
+> sole writer of `company/*`, `context_stamp` and `context_applied_at` on the managed path.
+> `setup-unbound` bundles the identical byte-for-byte copy for its own step 0 — never invoke that
+> skill by name from here.
+>
+> **CRM close-out apply (slot 8, internal):** `resources/8-write-crm.md` — the CRM close-out apply
+> step invoked by Step 5's NEXT STEPS close-out (row 10) with the in-memory `crm_update` object.
+> Open it yourself at the close-out CRM sub-beat; it owns the draft persist + the
+> `render.crm_update` render on its live simulate path (nothing written externally — that file's
+> own procedure is authoritative). The numbered slot-8 close-out step; never rep-invoked directly.
 >
 > **Task-type registry:** `resources/task-registry.md` — the canonical, closed set of task types
 > with each type's `mode` (`execute` | `define-only`), handler, invocation policy, and expected
@@ -446,7 +523,7 @@ do **not** re-review tasks here.
 
 | # | Phase | Procedure to follow | Notes |
 |---|-------|---------------------|-------|
-| 1 | Set up (silent) | *(this SKILL.md, Step 1)* | Read `state/run-state.yaml` and resolve the optional `scan_window` (absent/`now` ⇒ unbounded to now; `<n>h`/`<n>d` ⇒ window capped at now; unparseable ⇒ STOP, surface, never guess) **silently** — no `last_run` echo, no framing sentence, no status line. The discovery half runs silent through slot 3; the window appears to the rep only with the slate (row 4), not before it. If run state is missing/invalid, STOP and surface — do not invent it. |
+| 1 | Set up (silent) | *(this SKILL.md, Steps 1 and 1.5)* | Hydrate the working tree, then read `state/run-state.yaml` and resolve the optional `scan_window` (absent/`now` ⇒ unbounded to now; `<n>h`/`<n>d` ⇒ window capped at now; unparseable ⇒ STOP, surface, never guess) **silently** — no `last_run` echo, no framing sentence, no status line. The discovery half runs silent through slot 3; the window appears to the rep only with the slate (row 4), not before it. If run state is missing/invalid, STOP and surface — do not invent it. **Then Step 1.5's managed-context beat:** invoke `resources/managed-context-apply.md` directly and in full; no `resources/context/STAMP` in this bundle ⇒ the beat ends in silence and nothing below changes; a `STAMP` differing from run-state's `context_stamp` ⇒ the resource applies the team's context and this skill persists on success. It never blocks, never asks, and speaks only to name a replaced local edit or a stage rename's orphaned accounts. |
 | 2 | Discover events | `resources/1-discover-events.md` | Resolve logical capabilities via `resources/tool-bindings.md`. |
 | 3 | Classify work | `resources/2-classify-work.md` | Route to `accounts/` or `projects/`; assign/reuse slug. Routes on event metadata — no evidence has been fetched yet. |
 | 4 | Build slate | `resources/3-build-slate.md` | Upsert the `events`; present the annotated slate via the logical `render.slate` capability (interactive card grid on rich-UI runtimes, plain annotated lines otherwise — resolved in `resources/tool-bindings.md`). A newly-discovered call is `evidence_status: unknown` and its card carries no recording clause. |
@@ -455,5 +532,5 @@ do **not** re-review tasks here.
 | 7 | Bootstrap context | `resources/5-bootstrap-context.md` | Create `context.md` only if absent, grounded in the evidence just recovered. Selected item only. |
 | 8 | Work the item | `resources/6-work-account.md` | REFERENCE → SYNTHESIZE (→ prioritize/etc. per that skill). |
 | 9 | Plan triage, then execute tasks | *(this SKILL.md, Steps 3.5 and 4)* | **One comparative gate on the whole plan first (Step 3.5):** a single **batch** `review.collect` call carrying every retained task, each card carrying its own Accept / Reject / free-text edit controls (triage card stack on rich-UI runtimes, in-chat prompt otherwise — resolved in `resources/tool-bindings.md`). One submit returns every verdict; fan out in priority order — one `capture-feedback` line per verdict, an edit applied to the plan file first via work-account's APPLY-EDIT then logged, an untouched card writing nothing at all. **Then walk accepted, executable tasks only (Step 4)**, sequentially P1 first, with no second gate — the triage accept is the gate. Only `followup_email` executes today → follow `resources/7-draft-followup.md` at that task's turn (one email per item per run, covering questions / content / next steps incl. meeting availability); every other type is define-only per `resources/task-registry.md` — not walked, recapped as a rep-owned action item. |
-| 10 | NEXT STEPS | *(this SKILL.md, Step 5)* | Close-out (no task re-review): lead with the prescribed `next_step`, terse per-task outcome recap, then present the act-ready email draft via the logical `render.email_draft` — now **render/capture**: the preview carries its own Accept / Reject / free-text-edit footer (or the cited filename + body in chat with the same three verdicts invited there), so the draft and the decision on it are **one surface** and no checkpoint card follows it. An **edit is applied, not merely recorded** — `resources/7-draft-followup.md`'s `apply-draft-edit` rewrites the draft file first (bounded to recipients / subject / body; nothing sent, queued, or renamed), logs one `edit` line only on success, and re-renders for a fresh verdict, looping until accept or abandon (one log line per cycle, rep-bounded). Any open questions are collected separately via the logical `review.collect` (in-chat free text; skipped entirely when there are none); close the CRM sub-beat by opening `resources/8-write-crm.md` and handing it the in-memory `crm_update` object — it runs RESOLVE → APPLY (write branch inert while `crm.write` is unbound → live simulate branch), persists the simulated draft, and renders via `render.crm_update` (informational-only — zero affordances, nothing written externally). All resolved in `resources/tool-bindings.md`; verdicts drive `feedback-log.jsonl` appends (via resources 6/7). |
+| 10 | NEXT STEPS | *(this SKILL.md, Step 5)* | Close-out (no task re-review): lead with the prescribed `next_step`, terse per-task outcome recap, then present the act-ready email draft via the logical `render.email_draft` — now **render/capture**: the preview carries its own Accept / Reject / free-text-edit footer (or the cited filename + body in chat with the same three verdicts invited there), so the draft and the decision on it are **one surface** and no checkpoint card follows it. An **edit is applied, not merely recorded** — `resources/7-draft-followup.md`'s `apply-draft-edit` rewrites the draft file first (bounded to recipients / subject / body; nothing sent, queued, or renamed), logs one `edit` line only on success, and re-renders for a fresh verdict, looping until accept or abandon (one log line per cycle, rep-bounded). Any open questions are collected separately via the logical `review.collect` (in-chat free text; skipped entirely when there are none); close the CRM sub-beat by opening `resources/8-write-crm.md` and handing it the in-memory `crm_update` object — following that file's own procedure, it applies the update on its live simulate path: persists the simulated draft and renders via `render.crm_update` (informational-only — zero affordances, nothing written externally). All resolved in `resources/tool-bindings.md`; verdicts drive `feedback-log.jsonl` appends (via resources 6/7). |
 | 11 | Close | *(this SKILL.md, Step 6)* | Advance `last_run` in `state/run-state.yaml` — the only end-of-session write. |

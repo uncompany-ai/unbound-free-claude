@@ -1,6 +1,6 @@
 ---
 name: task-registry
-description: The canonical, declarative registry of every task type Unbound recognizes — each type's execution mode (execute | define-only), its handler skill (execute only), its invocation policy (per-task | once-per-run, execute only), and its expected proposed_action. Part A is the closed type set run-unbound's task-execution loop dispatches on and the type set work-account derives its enum from; Part B is the self-contained Handler Contract every execute handler honors. This artifact declares whether a type executes, never how it is gated — the approval gate stays owned once by run-unbound's loop. Natural-language Markdown, no code (ADR-1); no external writes (ADR-4).
+description: The canonical, declarative registry of every task type Unbound recognizes — each type's execution mode (execute | define-only), its handler skill (execute only), its invocation policy (per-task | once-per-run, execute only), and its expected proposed_action. Part A is the closed type set run-unbound's task-execution loop dispatches on and the type set work-account derives its enum from; Part B is the self-contained Handler Contract every execute handler honors. This artifact declares whether a type executes, never how it is gated — the approval gate stays owned once by run-unbound's loop. Natural-language Markdown, no code (ADR-1); no external writes — this artifact's own rule, not a wider prohibition.
 tier: all
 ---
 # task-registry
@@ -19,13 +19,15 @@ It has two parts in one file (FR20 — a contributor reads one document):
 
 This artifact is **declarative**: it declares *whether* a type executes, never *how* a type is gated.
 The approval gate is owned once by `run-unbound`'s loop (ADR-12 / D6); nothing here moves or
-re-implements it. Consistent with ADR-1 the registry is natural-language Markdown (no code), and per
-ADR-4 nothing here introduces an external write.
+re-implements it. Consistent with ADR-1 the registry is natural-language Markdown (no code), and
+nothing here introduces an external write — that is this artifact's own rule and the Handler
+Contract's (Part B), not a consequence of ADR-4 or any wider prohibition.
 
 > **Consumed by (point, don't copy).** `run-unbound` Step 4 reads this table at dispatch time and
 > resolves exactly two outcomes per accepted task (`execute` the named handler / `define-only`
 > not walked — recapped as a rep-owned action item). `work-account` derives its `type` enum from this table and emits only
-> types in it — no independent list. `run-unbound` Step 4 dispatches per this registry by pointer
+> types in it — no independent list; at synthesis it also reads each row's `when` as typing guidance,
+> the one column the loop never reads. `run-unbound` Step 4 dispatches per this registry by pointer
 > and embeds no copy — this registry is the sole statement of the type set (see "Distribution and
 > current consumers").
 
@@ -35,21 +37,22 @@ ADR-4 nothing here introduces an external write.
 
 **Columns.** `type` (the dispatch key) · description · `mode` (`execute` | `define-only`) · handler
 (skill name; `execute` rows only) · `invocation` (`per-task` | `once-per-run`; `execute` rows only)
-· expected `proposed_action` (the intent signal the handler's trigger contract checks).
+· expected `proposed_action` (the intent signal the handler's trigger contract checks) · `when` (the
+precondition under which this type is the right typing — read at synthesis, required on every row).
 
 The MVP set re-homes today's `run-unbound` Step 4 prose table **verbatim** — only `followup_email`
 executes (and because it folds N asks into one email, its invocation is `once-per-run`); every other
 type is `define-only` with handler and invocation blank.
 
-| `type` | Description | `mode` | Handler | `invocation` | Expected `proposed_action` |
-| --- | --- | --- | --- | --- | --- |
-| `followup_email` | the follow-up email to send | `execute` | `draft-followup` | `once-per-run` | `draft_email` |
-| `answer_questions` | ALL outstanding questions to answer for the audience, grouped as one task | `define-only` | — | — | `draft_answers` |
-| `create_deck` | a deck to create | `define-only` | — | — | `ideate_content` |
-| `create_one_pager` | a one-pager to create | `define-only` | — | — | `ideate_content` |
-| `create_proposal` | a formal proposal to assemble — scope, packaging, pricing | `define-only` | — | — | `draft_proposal` |
-| `prepare_demo` | tailored demo / pilot prep — environment, data, success criteria | `define-only` | — | — | `prep_demo` |
-| `internal` | internal / rep-owned work | `define-only` | — | — | `none` |
+| `type` | Description | `mode` | Handler | `invocation` | Expected `proposed_action` | `when` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `followup_email` | the follow-up email to send | `execute` | `draft-followup` | `once-per-run` | `draft_email` | evidence leaves an ask, question, or promise owed to the audience |
+| `answer_questions` | ALL outstanding questions to answer for the audience, grouped as one task | `define-only` | — | — | `draft_answers` | the audience asked something the evidence leaves unanswered — one task carries the full set |
+| `create_deck` | a deck to create | `define-only` | — | — | `ideate_content` | the deliverable is a multi-section narrative walked through with an audience |
+| `create_one_pager` | a one-pager to create | `define-only` | — | — | `ideate_content` | the deliverable is a single page the audience reads on its own |
+| `create_proposal` | a formal proposal to assemble — scope, packaging, pricing | `define-only` | — | — | `draft_proposal` | the ask is commercial — scope, packaging, or pricing to assemble |
+| `prepare_demo` | tailored demo / pilot prep — environment, data, success criteria | `define-only` | — | — | `prep_demo` | the ask is a tailored demo or pilot — environment, data, or success criteria to prepare |
+| `internal` | internal / rep-owned work | `define-only` | — | — | `none` | the action is sound but no other row's precondition fits |
 
 > **The "next meeting to schedule" is not a task type** (unchanged). That need lives in
 > `work-account`'s `next_step` (plus an optional `next_call` sub-block on the `followup_email` task's
@@ -84,6 +87,42 @@ The artifact states these rules; the loop and the synthesizer honor them.
   (and, when `execute`, its handler and invocation). It says **nothing** about *how* a type is
   approval-gated. The approval gate is owned once by `run-unbound`'s loop — the Step 3.5 triage —
   and applied uniformly to every `execute` type (ADR-12 / D6); the registry neither restates nor varies it.
+- **`when` — the selection precondition (guidance, never a gate).** Every row carries a one-line,
+  natural-language `when`: the precondition under which this type is the right typing for an observed
+  action. It states a **precondition**, not a restatement of the Description — the Description labels
+  the deliverable, `when` decides whether this row is the one. `work-account` Step 2 reads it as
+  typing guidance; **nothing else reads it**. It is guidance for the synthesizer and **never a gate**
+  — no loop behavior, no handler behavior, and no approval path branches on it, so the rule above
+  still holds unqualified: the registry declares *whether* a type executes and never *how* anything
+  is gated. A `when` cell is **required and non-empty on every row**, core and overlay alike; an
+  absent or blank cell is a finding for the gate to raise, never a silent default, because a blank
+  precondition is indistinguishable from a type that fits everything. A `when` cell carries **no `|`
+  character** — a pipe would split the row and corrupt the table. Where two rows' preconditions both
+  fit and neither settles the typing, the synthesizer types the likelier candidate and **names the
+  competing sibling in that task's `rationale`**, so the tie reaches the rep at triage rather than
+  being resolved silently.
+- **Near-sibling types take distinct `proposed_action` values — a secondary measure, and it has a
+  limit.** Where two rows describe the same family of work split only by their `when` precondition,
+  give each row a **distinct** expected `proposed_action`. Sharing one value is legal, but it leaves
+  each handler's trigger contract unable to tell the siblings apart at all. **State the limit
+  honestly, because over-trusting this rule is itself the hazard:** `work-account` sets a task's
+  `proposed_action` from the **same row it typed against**, so type and action move together — a task
+  typed against the wrong sibling wholesale carries that wrong row's action, the trigger contract
+  checks type ✓ and action ✓, and it **passes**. Distinct values catch exactly one mistake shape, the
+  **mixed-signal** case: a type read off one row emitted with its sibling's action, where the contract
+  fails and the handler no-ops cleanly instead of writing a wrong draft. A sharp `when` plus the
+  rationale-surfaced tie is therefore the **primary** defense against sibling mis-typing; this rule is
+  the secondary one. A maintainer who reads it as the real protection writes a lazy `when` — which is
+  the failure the column exists to prevent.
+
+> **Worked example — a near-sibling pair.** Adding `build_architecture` and `update_architecture`
+> splits one family of work by a precondition no Description can carry, so the `when` cells do the
+> deciding: `| build_architecture | an architecture doc to write | define-only | — | — | draft_architecture | the account has no architecture doc on file yet |`
+> alongside `| update_architecture | an existing architecture doc to revise | define-only | — | — | revise_architecture | an architecture doc exists and the evidence changes it |`.
+> The distinct `proposed_action` values are the **secondary** measure per the rule above — they catch
+> the mixed-signal case only. Where the evidence settles neither cell — the doc's existence is simply
+> unclear from what was said — the synthesizer types the likelier row and names the other in that
+> task's `rationale`, and the rep resolves it at triage.
 
 ### Activation and addition (neither touches `run-unbound`'s loop)
 
@@ -99,9 +138,11 @@ Neither activation nor addition edits `run-unbound`'s loop. The loop reads `mode
 registry (+ a handler), never in the loop.
 
 > **Worked example — activating a `per-task` type later.** Turning on decks is the same one-row
-> change: `| create_deck | a deck to create | execute | draft-deck | per-task | ideate_content |`.
+> change: `| create_deck | a deck to create | execute | draft-deck | per-task | ideate_content | the deliverable is a multi-section narrative walked through with an audience |`.
 > Because `invocation` is declared **data**, two `create_deck` tasks in one plan correctly yield
-> **two** decks — with **no** edit to `run-unbound`'s loop.
+> **two** decks — with **no** edit to `run-unbound`'s loop. Activation changes `mode`, `handler` and
+> `invocation` only; the row's `when` is unaffected, because *when a type is the right typing* is
+> independent of whether it executes.
 
 ### Client overlays (registry-ext)
 
@@ -109,11 +150,14 @@ A maintainer deploying Unbound for a client that needs **client-specific** task 
 **client overlay** — a `registry-ext.md` file the client owns — instead of editing this shared
 canonical file. The overlay composes onto core; core stays immutable and re-pinnable.
 
-- **Row shape (identical to Part A).** An overlay row carries the **same six columns in the same
+- **Row shape (identical to Part A).** An overlay row carries the **same seven columns in the same
   order** as the Part A table: `type` | description | `mode` | handler | `invocation` |
-  expected `proposed_action`. Every registry rule above (mode-defaults, invocation-defaults,
-  unknown-type handling, declares-*whether*-never-*how*) applies to an overlay row unchanged — an
-  overlay row is a registry row that happens to live in the client's file.
+  expected `proposed_action` | `when`. Every registry rule above (mode-defaults, invocation-defaults,
+  unknown-type handling, the `when` precondition, declares-*whether*-never-*how*) applies to an
+  overlay row unchanged — an overlay row is a registry row that happens to live in the client's file.
+  `when` is **required and non-empty on an overlay row exactly as on a core row**: a client type the
+  synthesizer cannot tell apart from its neighbors is the same defect, and it arrives with no core
+  row to fall back on.
 - **Merge rule (composed closed set).** The composed vocabulary is **core ∪ overlay**: the union of
   this file's Part A and the client's `registry-ext.md`. That union — not core alone — is the
   **closed** set (FR4 generalized to a *closed composed set*). `run-unbound` dispatches on it and
@@ -162,8 +206,12 @@ runtime resolves the binding.
 - The handler may write **only a local draft** under the item's `drafts/`
   (`accounts|projects/<slug>/drafts/…`). It creates `drafts/` if missing; it never writes to the repo
   root or to `company/`.
-- It performs **no external send or queue** and treats **all external systems as read-only** (ADR-4)
-  — no email is ever sent or queued; Drive, Calendar, CRM, etc. are read-only.
+- It performs **no external send or queue** and treats **all external systems as read-only** — and it
+  does so because **this contract says so**, not as a consequence of ADR-4 or any wider prohibition.
+  The clause stands on its own: a handler is a local-draft author by definition, so wherever else in
+  Unbound an external write may be declared and bound, it is reached through a close-out composition
+  slot **outside** the Handler Contract and never by a handler. No email is ever sent or queued;
+  Drive, Calendar, CRM, etc. are read-only to a handler.
 - It introduces **no new writer**. Feedback and plan-file writes route through `work-account`'s
   shared `capture-feedback` / `apply-edit` authorities (reused by name, never re-authored); the
   handler adds none of its own.

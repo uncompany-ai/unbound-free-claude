@@ -1,23 +1,27 @@
 # Tool Bindings — Claude Cowork (MVP)
 
 > **What this file is.** The single source of truth mapping each **logical capability** a skill may call to the **concrete
-> MCP tool** that satisfies it on **Claude Cowork** — with `runtime/adapters/cowork.md`, the only runtime-specific surface
+> MCP tool** that satisfies it on **Claude Cowork** — with `resources/tool-bindings.md`, the only runtime-specific surface
 > (ADR-6 / Pattern 4).
 
 ## The indirection rule (ADR-6)
 
 - Skills under `skills/` reference **only logical capability names**; they never name a concrete MCP tool. Concrete tool
-  names live only in this file and `runtime/adapters/cowork.md`.
+  names live only in this file and `resources/tool-bindings.md`.
 - Porting = one bindings entry/file + one adapter under `runtime/adapters/`; nothing under `skills/` changes (Pattern 4).
 - Cross-runtime equivalents deferred — ChatGPT/Copilot bindings and adapters do not exist yet; every binding below covers
   the **Cowork** surface plus its documented fallback only.
 
 ## Security posture (ADR-4)
 
-All external-data bindings are **read-scope only**; no external write scope is requested or configured anywhere in this
-file — the external write boundary stays closed in the MVP (growth capabilities: "Out of scope"). The one **declared
-future write gate** (`crm.write`, below) is documentation only: it is **NOT BOUND** to any concrete tool in any runtime
-and requests no scope — it names the gate and its simulate fallback so the boundary is explicit, not open. The eight `render.*` /
+Every **read** binding in this file is **read-scope only**, and external **writes are never implicit**: a write can occur
+only through a capability this file *explicitly declares* with a write scope, and only when all four of ADR-4's amended
+conditions hold — the capability is **positively confirmed bound**, the rep **approves the exact payload in-session, once
+per write**, the mapping is **production-eligible** — durably guaranteeing that one approved update replays as one
+update and not two — and anything short of that **degrades honestly** to the simulate path. No capability acquires a write scope by turning up in a
+runtime's tool list, and where none is declared or bound this file requests and configures no write scope at all (growth
+capabilities: "Out of scope").
+The eight `render.*` /
 `review.collect` capabilities are **local render/capture surfaces, not external reads or writes**: none introduces a new
 writer or write scope; the only writes they can lead to are the existing local authorities in
 `skills/pipeline/work-account.md` — SET-STATUS, `capture-feedback`, and APPLY-EDIT — plus, for the setup-time
@@ -29,35 +33,38 @@ Integrations per `notes/architecture.md#Integration-Points`; tool names enumerat
 
 | Logical capability | Scope | Cowork tool + read-call shape (verbatim) | Consumed by |
 | --- | --- | --- | --- |
-| `calendar.list_events_since(ts)` — `ts` is an ISO-8601 timestamp | read | `gws calendar events list --params '{"calendarId":"primary","timeMin":"<ts>","singleEvents":true,"orderBy":"startTime"}'` — Google Calendar via the `gws` Google Workspace CLI (OAuth read scope) | `skills/pipeline/discover-events.md` |
-| `calendar.availability(attendees, window)` — `attendees` = the rep + the named stakeholders; `window` = start/end ISO 8601, resolved in-skill; bounded to one query per draft. Honest degradation: unreadable attendee → rep-only slots phrased as offers to confirm; capability unavailable → the meeting ask carries no concrete times | read | **Primary:** `gws calendar freebusy query --params '{"timeMin":"<window start>","timeMax":"<window end>","items":[{"id":"<attendee email>"}, ...]}'` — busy blocks per attendee; open slots derived in-skill (pure date math, run `timezone`). **Fallback** (if freebusy is not exposed — verify at the next test gate): rep-only open slots derived in-skill from the `gws calendar events list` read over the window. | `skills/handlers/draft-followup.md` (AVAILABILITY) |
+| `calendar.list_events_since(ts)` — `ts` is an ISO-8601 timestamp | read | native Google Calendar MCP connector — `mcp__claude_ai_Google_Calendar__list_events` with `startTime = <ts>` and `orderBy: startTime` (primary calendar; connector OAuth read scope) | `skills/pipeline/discover-events.md` |
+| `calendar.availability(attendees, window)` — `attendees` = the rep + the named stakeholders; `window` = start/end ISO 8601, resolved in-skill; bounded to one query per draft. Honest degradation: unreadable attendee → rep-only slots phrased as offers to confirm; capability unavailable → the meeting ask carries no concrete times | read | **Primary:** native Google Calendar MCP connector — `mcp__claude_ai_Google_Calendar__suggest_time` with `attendeeEmails = <attendees>` and `startTime`/`endTime` = the window — free slots across all named attendees, returned directly (run `timezone` passed through). **Fallback** (if the suggest tool is unavailable): rep-only open slots derived in-skill from the `mcp__claude_ai_Google_Calendar__list_events` read over the window. | `skills/handlers/draft-followup.md` (AVAILABILITY) |
 | `transcript.get(call_ref)` — provider `granola` | read | native Granola MCP connector — `get_meeting_transcript`; correlate `call_ref` → meeting via `list_meetings` / `query_granola_meetings` / `get_meetings` | `skills/pipeline/fetch-transcript.md` |
 | `transcript.get(call_ref)` — provider `zoom` | read | native Zoom MCP connector — `get_meeting_assets(meeting_id)` to select the transcript asset, then `get_recording_resource(asset_ref)` for the body; correlate via `search_meetings(query=<title or attendee>)` / `search_zoom` / `recordings_list(date_window)` | `skills/pipeline/fetch-transcript.md` |
 | `transcript.get(call_ref)` — provider `gong` | read | native Gong MCP connector — search/list call to correlate, then transcript-fetch call for the body. *Not currently invoked — the row activates when the host exposes the connector.* | `skills/pipeline/fetch-transcript.md` |
-| `content.search(query)` — returns opaque `ref`s | read | `gws drive files list --params '{"q":"<query>","fields":"files(id,name,mimeType)"}'` | `skills/handlers/draft-followup.md`, `skills/setup-unbound.md` (Drive intake) |
-| `content.get(ref)` — resolves a `ref` to its content | read | `gws drive files get --params '{"fileId":"<ref>","fields":"id,name,mimeType"}'` (Drive `files export`/media for the body) | `skills/handlers/draft-followup.md`, `skills/setup-unbound.md` (Drive intake + asset-link verification) |
+| `content.search(query)` — returns opaque `ref`s | read | native Google Drive MCP connector — `mcp__claude_ai_Google_Drive__search_files` (structured query built from `query`; returns matching files' id, name, MIME type) | `skills/handlers/draft-followup.md`, `skills/setup-unbound.md` (Drive intake) |
+| `content.get(ref)` — resolves a `ref` to its content | read | native Google Drive MCP connector — `mcp__claude_ai_Google_Drive__get_file_metadata` for id/name/MIME type, then `mcp__claude_ai_Google_Drive__read_file_content` for the body | `skills/handlers/draft-followup.md`, `skills/setup-unbound.md` (Drive intake + asset-link verification) |
 | `web.fetch(url)` — resolves a public web page URL to its readable content | read | Concrete Cowork web-fetch tool **enumerated live at the setup binding test gate** (per the indirection rule — never guessed in advance). **Optional-degraded:** capability unavailable ⇒ the website intake path is unavailable, stated to the user; setup proceeds via chat files, Drive, or the interview. | `skills/setup-unbound.md` (website intake) |
-| `email.list_unanswered_threads(ts)` — all thread fields carried verbatim: `thread_ref` (opaque correlation key), `subject`, `participants[]` (`{ name?, email? }`), `last_message_at` (ISO 8601 with offset; compared in the run's `timezone`, never reformatted); `latest_external_message_body` is inline (earlier messages not loaded) | read | **Primary:** `gws gmail threads list --params '{"q":"in:inbox -in:sent -category:promotions -category:social -category:updates -in:spam -in:trash after:<ts_unix>","labelIds":["INBOX"]}'`; thread bodies via `gws gmail threads get`. The `q` parameter is the **hard pre-filter**, owned here, not by the skill: INBOX-only; exclude promotions/social/updates/spam/trash; `-in:sent` keeps only threads where the rep has not replied last. **Fallback:** native Gmail MCP connector — `mcp__claude_ai_Gmail__search_threads` (same `q`) + `mcp__claude_ai_Gmail__get_thread`. | `skills/pipeline/discover-events.md` |
-| `email.get_thread(thread_ref)` — get-by-ref: resolve ONE stored `thread_ref` to its thread, for evidence recovery on a later run. Same thread shape as the list capability; **no `q`, no window, no search** — the ref is the whole query, so recovery does not depend on the discovery window | read | **Primary:** `gws gmail threads get --params '{"id":"<thread_ref>"}'` — the same read the list capability already uses for thread bodies, addressed by ref alone. **Fallback:** native Gmail MCP connector — `mcp__claude_ai_Gmail__get_thread`. A ref that no longer resolves (thread deleted, moved out of the account, or otherwise purged) returns `missing` — never a nearest-match thread, never a fabricated body. | `skills/pipeline/fetch-transcript.md` (evidence recovery) |
+| `email.list_unanswered_threads(ts)` — all thread fields carried verbatim: `thread_ref` (opaque correlation key), `subject`, `participants[]` (`{ name?, email? }`), `last_message_at` (ISO 8601 with offset; compared in the run's `timezone`, never reformatted); `latest_external_message_body` is inline (earlier messages not loaded) | read | native Gmail MCP connector — `mcp__claude_ai_Gmail__search_threads` with `q = "in:inbox -in:sent -category:promotions -category:social -category:updates -in:spam -in:trash after:<ts_unix>"`; thread bodies via `mcp__claude_ai_Gmail__get_thread`. The `q` parameter is the **hard pre-filter**, owned here, not by the skill: INBOX-only; exclude promotions/social/updates/spam/trash; `-in:sent` keeps only threads where the rep has not replied last. | `skills/pipeline/discover-events.md` |
+| `email.list_sent_threads(ts, limit)` — the rep's **own** outbound messages, read for voice extraction only. Each carries `message_ref` (opaque), `subject`, `recipients[]` (`{ name?, email? }`), `sent_at` (ISO 8601 with offset) and `body`; `limit` caps the read at the most recent N (default 25), and `ts` is its lower bound | read | native Gmail MCP connector — `mcp__claude_ai_Gmail__search_threads` with `q = "in:sent -in:chats -in:draft after:<ts_unix>"`; bodies via `mcp__claude_ai_Gmail__get_thread`. The `q` parameter is the **hard pre-filter**, owned here, not by the skill: SENT-only, chats and drafts excluded. **No new authorization:** the read scope the discovery binding already uses covers SENT — this row adds a capability, not a scope. **Optional-degraded:** capability unavailable ⇒ the sent-mail voice path is unavailable, stated to the user; setup proceeds from the writing samples the rep provides and the voice interview. | `skills/setup-unbound.md` (voice intake) |
+| `email.get_thread(thread_ref)` — get-by-ref: resolve ONE stored `thread_ref` to its thread, for evidence recovery on a later run. Same thread shape as the list capability; **no `q`, no window, no search** — the ref is the whole query, so recovery does not depend on the discovery window | read | native Gmail MCP connector — `mcp__claude_ai_Gmail__get_thread` with `threadId = <thread_ref>` — the same read the list capability already uses for thread bodies, addressed by ref alone. A ref that no longer resolves (thread deleted, moved out of the account, or otherwise purged) returns `missing` — never a nearest-match thread, never a fabricated body. | `skills/pipeline/fetch-transcript.md` (evidence recovery) |
 
-> **Gmail test gate.** Which Gmail surface resolves in Cowork is determined live at the discovery test gate.
+> **Gmail test gate.** Which Gmail surface resolves in Cowork is determined live at the discovery test gate — the same
+> gate resolves `email.list_sent_threads`, which rides the same surface and the same read scope.
 > **TO BE FILLED IN AT TEST GATE:** the verified tool (primary or fallback), one-line live-call evidence, and any <!-- lint-allow: pending live test-gate resolution -->
 > required `q` deviation; until then: primary preferred, fallback documented, resolution pending.
 
 ## Binding table — render/capture surfaces
 
-All eight resolve interactively to `mcp__visualize__show_widget` rendering the pinned template — layout minutiae live in the template, never in prose; surface choice per the resolution rule below.
+All nine resolve interactively to `mcp__visualize__show_widget` rendering the pinned template — layout minutiae live in the template, never in prose; surface choice per the resolution rule below.
 
 | Logical capability | Scope | Interactive surface (pinned template) | Fallback | Consumed by |
 | --- | --- | --- | --- | --- |
-| `render.tasks(task_view)` | render, no capture | card stack, one card per task — `runtime/templates/task-plan-widget.html` | plain Markdown checklist in chat | `skills/pipeline/work-account.md` (re-render after SET-STATUS / APPLY-EDIT), `skills/standalone/collect-tasks.md` (roundup) |
-| `review.collect(checkpoint_view)` | render/capture (local verdicts only) | **batch:** triage card stack with per-card controls, one submit — `runtime/templates/batch-triage-widget.html`; **single-item:** checkpoint card, one item per call — `runtime/templates/checkpoint-widget.html` | in-chat `accept \| edit \| reject` prompt per item | `skills/run-unbound.md` (Step 3.5 batch triage + Step 3.5 material-edit re-confirm + Step 5 close-out open questions) |
-| `render.slate(slate_view)` | render, no capture | card grid, one card per derived pending-event group — `runtime/templates/slate-widget.html` | plain annotated slate lines | `skills/pipeline/build-slate.md` Step 4 (via `run-unbound` Steps 2–3) |
-| `render.email_draft(draft_view)` | render/capture (the draft's own verdict) | mail-client preview carrying an Accept / Reject / free-text-edit verdict footer — `runtime/templates/email-draft-widget.html` | cited filename + draft body in chat, with the same three verdicts invited in chat | `skills/run-unbound.md` (Step 5 combined output gate) |
-| `render.crm_update(crm_view)` | render, no capture | informational CRM card — `runtime/templates/crm-update-widget.html` | plain in-chat "CRM Updates (simulated)" Markdown section | `skills/pipeline/write-crm.md` (APPLY — simulate branch) |
-| `render.connections(connections_view)` | render, no capture | capability status board capped by the readiness banner — `runtime/templates/connections-widget.html` | plain Markdown capability table + verdict line in chat | `skills/standalone/connect-tools.md` (both entries) |
-| `render.setup_progress(progress_view)` | render, no capture | section checklist card — `runtime/templates/setup-progress-widget.html` | plain Markdown section-status list in chat | `skills/setup-unbound.md` (progress + resume + audit views) |
-| `render.context_preview(preview_view)` | render, no capture | formatted artifact preview (positioning block / stage-ladder pipeline / asset table) — `runtime/templates/context-preview-widget.html` | plain Markdown artifact section in chat | `skills/setup-unbound.md` (section-loop previews) |
+| `render.tasks(task_view)` | render, no capture | card stack, one card per task — `resources/templates/task-plan-widget.html` | plain Markdown checklist in chat | `skills/pipeline/work-account.md` (re-render after SET-STATUS / APPLY-EDIT), `skills/standalone/collect-tasks.md` (roundup) |
+| `review.collect(checkpoint_view)` | render/capture (local verdicts only) | **batch:** triage card stack with per-card controls, one submit — `resources/templates/batch-triage-widget.html`; **single-item:** checkpoint card, one item per call — `resources/templates/checkpoint-widget.html` | in-chat `accept \| edit \| reject` prompt per item | `skills/run-unbound.md` (Step 3.5 batch triage + Step 3.5 material-edit re-confirm + Step 5 close-out open questions + qualification gaps) |
+| `render.slate(slate_view)` | render, no capture | card grid, one card per derived pending-event group — `resources/templates/slate-widget.html` | plain annotated slate lines | `skills/pipeline/build-slate.md` Step 4 (via `run-unbound` Steps 2–3) |
+| `render.email_draft(draft_view)` | render/capture (the draft's own verdict) | mail-client preview carrying an Accept / Reject / free-text-edit verdict footer — `resources/templates/email-draft-widget.html` | cited filename + draft body in chat, with the same three verdicts invited in chat | `skills/run-unbound.md` (Step 5 combined output gate) |
+| `render.crm_update(crm_view)` | render, no capture | informational CRM card — `resources/templates/crm-update-widget.html` | plain in-chat "CRM Updates (simulated)" Markdown section | `skills/pipeline/write-crm.md` (APPLY) |
+| `render.connections(connections_view)` | render, no capture | capability status board capped by the readiness banner — `resources/templates/connections-widget.html` | plain Markdown capability table + verdict line in chat | `skills/standalone/connect-tools.md` (both entries) |
+| `render.setup_progress(progress_view)` | render, no capture | section checklist card — `resources/templates/setup-progress-widget.html` | plain Markdown section-status list in chat | `skills/setup-unbound.md` (progress + resume + audit views) |
+| `render.context_preview(preview_view)` | render, no capture | formatted artifact preview (positioning block / stage-ladder pipeline / asset table) — `resources/templates/context-preview-widget.html` | plain Markdown artifact section in chat | `skills/setup-unbound.md` (section-loop previews) |
+| `render.source_intake(intake_view)` | render, no capture | source-catalog checklist card — `resources/templates/source-intake-widget.html` | plain Markdown item-status list in chat | `skills/setup-unbound.md` (step-2 intake, re-rendered after each answer) |
 
 ## API contract — logical capability signatures (stable across runtimes)
 
@@ -74,6 +81,12 @@ email.list_unanswered_threads(ts) -> [thread]            # read; threads where t
                                                           # thread = { thread_ref, subject, participants[],
                                                           #            last_message_at (ISO 8601 with offset),
                                                           #            latest_external_message_body }
+email.list_sent_threads(ts, limit) -> [sent_message] | unavailable  # read; optional-degraded — the rep's own outbound mail, read at
+                                                          # setup for voice extraction only, capped at the most recent `limit`
+                                                          # (default 25); unavailable ⇒ sent-mail voice path unavailable (stated),
+                                                          # setup proceeds from provided samples + the voice interview
+                                                          # sent_message = { message_ref, subject, recipients[],
+                                                          #                  sent_at (ISO 8601 with offset), body }
 email.get_thread(thread_ref)    -> thread | missing       # read; get-by-ref, same thread shape, no window and no search — the
                                                           # email counterpart of transcript.get for evidence recovery; a ref that
                                                           # no longer resolves => missing (Pattern 2 — surfaced, never fabricated)
@@ -85,8 +98,9 @@ render.crm_update(crm_view)     -> crm_card | markdown_block                    
 render.connections(connections_view) -> connections_board | markdown_table       # render, no capture
 render.setup_progress(progress_view) -> progress_card | markdown_list            # render, no capture
 render.context_preview(preview_view) -> artifact_preview | markdown_section      # render, no capture
-crm.write(crm_update)           -> synced_confirmation | simulate                # write (future, UNBOUND — Epic G); unbound ⇒ documented fallback = simulate (persist local draft + render.crm_update). Never assume a write surface.
+render.source_intake(intake_view)   -> intake_card | markdown_list               # render, no capture
 ```
+
 
 ## Resolution rule — all render capabilities
 
@@ -105,7 +119,7 @@ and every site then uses that fallback: "could not confirm" never becomes an ass
 the same rule as above, stated for the cached case. Both modes carry the same content — no field dropped or invented on
 either surface (ADR-1); an `inferred:` evidence/basis marker renders as-is, never dressed as a citation. Widget
 mechanics (`read_me`/`show_widget` protocol, failure handling, fragment constraints, sendPrompt grammar, ADR-9 click
-semantics) live in `runtime/adapters/cowork.md`.
+semantics) live in `resources/tool-bindings.md`.
 
 ## render.tasks
 
@@ -120,23 +134,25 @@ presentation-only (`not-done → "open"`, `done → "done"`, `deferred → "defe
 
 ## review.collect
 
-`checkpoint_view = { items[], open_questions[] }`; each `item = { task_id, title, rationale, evidence, context?, kind:
+`checkpoint_view = { items[], open_questions[], qualification_gaps?[] }`; each
+`qualification_gap = { field, coach }`; each `item = { task_id, title, rationale, evidence, context?, kind:
 "task" | "context_section" | "binding_change", body? }` — `context` is the task's typed
 execution-context block on `kind: "task"` items. The produced email draft is **not** an item kind here: it carries its
 own verdict on its own surface (see `## render.email_draft`). Returns
-`verdicts = { item_verdicts[], open_answers[] }`; `item_verdict = { task_id, verdict ∈ {accept|edit|reject}, note }`;
-`open_answer = { question, answer }`.
+`verdicts = { item_verdicts[], open_answers[], qualification_answers?[] }`;
+`item_verdict = { task_id, verdict ∈ {accept|edit|reject}, note }`;
+`open_answer = { question, answer }`; `qualification_answer = { field, answer }`.
 
 **Call-site policy — batch or single-item, fixed per site.** `items[]` was always a list; which mode a site uses is
 settled here, never chosen by the caller:
 
-| Call site | Mode | `items[]` | `open_questions[]` |
-| --- | --- | --- | --- |
-| `run-unbound` Step 3.5 — plan triage | **batch** | all retained tasks, in priority order | `[]` |
-| `run-unbound` Step 3.5 — material-edit re-confirm | single-item | the one re-shaped task | `[]` |
-| `run-unbound` Step 5 — close-out open questions | no items | `[]` | this run's list (skip the call entirely when it is empty) |
-| `setup-unbound` — `context_section` | single-item | one previewed section | `[]` |
-| `connect-tools` — `binding_change` | single-item | one proposed row edit | `[]` |
+| Call site | Mode | `items[]` | `open_questions[]` | `qualification_gaps[]` |
+| --- | --- | --- | --- | --- |
+| `run-unbound` Step 3.5 — plan triage | **batch** | all retained tasks, in priority order | `[]` | `[]` |
+| `run-unbound` Step 3.5 — material-edit re-confirm | single-item | the one re-shaped task | `[]` | `[]` |
+| `run-unbound` Step 5 — close-out questions + qualification | no items | this run's list | `crm_update.qualification.gaps[]` or `[]` (one call when either list is non-empty; skip only when both are empty) |
+| `setup-unbound` — `context_section` | single-item | one previewed section | `[]` | `[]` |
+| `connect-tools` — `binding_change` | single-item | one proposed row edit | `[]` | `[]` |
 
 A **batch** return simply carries N `item_verdict`s. **An omitted `task_id` in a batch return is an omitted verdict** —
 silence stays per-task inside a batch, and nothing is written for a card the rep never touched. A batch of one is still a
@@ -153,12 +169,14 @@ identically; ambiguous free text that cannot map to the enum → ask, never an o
 the existing write authorities — no new writer: one `capture-feedback(namespace, slug, task_id, verdict, note)` line per
 verdict to `state/feedback-log.jsonl`; a **task** `edit` is applied via work-account's APPLY-EDIT (an **output** `edit`
 is applied by the artifact's own handler — see `## render.email_draft`); verdicts never touch task `status`
-(SET-STATUS's domain). `open_questions[]`
-are **never widget-rendered** — they remain in-chat free text; `open_answers[]` are surfaced only — echoed in chat,
-nothing written (future persistence is ENRICH's, never the checkpoint's).
+(SET-STATUS's domain). `open_questions[]` and `qualification_gaps[]` are **never widget-rendered** — they remain
+in-chat free text. The answer asymmetry is deliberate: `open_answers[]` are echoed in chat and held in-session, with
+nothing written for them; each non-empty `qualification_answer` is an account fact routed through exactly one
+work-account `capture-qualification` invocation. An empty or unanswered qualification gap writes nothing. The
+checkpoint itself is write-free; all qualification persistence belongs to work-account's named authority.
 
 Setup-time item kinds (outside the run loop): `context_section` — the item is one previewed context section, its
-`task_id` slot carrying the section id (`process | messaging | assets | state`); consumed by `skills/setup-unbound.md`
+`task_id` slot carrying the section id (`process | messaging | assets | voice | state`); consumed by `skills/setup-unbound.md`
 (section verdicts, state-init confirm, refresh proposals). `binding_change` — the item is one proposed row edit to this
 file; consumed by `skills/standalone/connect-tools.md`. One item per call, never batched, and the
 `accept | edit | reject` enum are unchanged. **Routing outside the run loop:** accept ⇒ the invoking skill performs its
@@ -209,15 +227,27 @@ capability adds **no** writer: the draft file is one `draft-followup` already ow
 
 `crm_view` = the in-memory `crm_update` object `work-account` Step 6.5 handed back (`current_stage`,
 `stage_recommendation { recommendation, to_stage, criteria[], unmet[], reason }`, the verbatim-carried `next_step`,
-`product_gaps[]`) plus the persisted `drafts/YYYY-MM-DD-crm-update.md` `filename`; nothing is re-evaluated at render
+`product_gaps[]`, and the optional `qualification { framework, fields[]: { field, status: captured|missing, evidence?,
+updated }, gaps[]: { field, coach } }` block when Step 6.5 emitted one) plus the persisted
+`drafts/YYYY-MM-DD-crm-update.md` `filename`; nothing is re-evaluated at render
 time. **Informational only:** zero affordances, returns nothing; no `review.collect` call follows, no `capture-feedback`
 line is written, and silence has no meaning here. Card text rules: exactly one recommendation pill —
 `advance to <stage>` / `no change` / `not applicable — <reason>`; a met exit criterion carries its source-prefixed
 citation, an unmet one reads `no evidence this run`, and the criteria block is **omitted entirely on `not-applicable`**
-(no criteria were evaluated); the carried `next_step` renders in one line (or its explicit no-next-step reason); one
-cited bullet per product gap, or the honest `none raised this run` line when empty. The persisted filename is cited in
-chat with the explicit statement that **nothing was written to any external system**; the stage recommendation stays
-advisory — ENRICH remains the sole stage writer; the rep applies it to their real CRM if they agree.
+(no criteria were evaluated); when `crm_view` carries a `qualification` block, a `Qualification (<framework>)` section
+renders between the stage/criteria content and the next step — mirroring the draft's `## Qualification (<framework>)`
+placed after `## Stage` (before `## Next Step`) — headed by an `N of M captured` count line (`M` the declared field
+count, `N` the captured count — a count, never a percentage, score, or health grade), then one line per field in
+declaration order: a captured field renders `- [x] <field> — <citation>` with its source-prefixed citation, a missing
+field renders `- [ ] Missing: <field> — <coach hint>` with the hint verbatim from `gaps[].coach`, never generated or
+re-worded; with no `qualification` block the section is **omitted entirely** — never an empty heading, never a
+`0 of 0` line; the carried `next_step` renders in one line (or its explicit no-next-step reason); one
+cited bullet per product gap, or the honest `none raised this run` line when empty. On the consuming skill's **simulate**
+branch — the path taken wherever no write capability is confirmed bound, and on a decline — the persisted filename is
+cited in chat with the explicit statement that **nothing was written to any external system**, and the rep applies it to
+their real CRM if they agree. On its write branch the same view is presented for the rep's approval before anything is
+sent, and what is cited afterwards is the outcome of that answer. Either way the stage recommendation stays advisory —
+ENRICH remains the sole stage writer — and this capability itself performs **no** write and carries **no** affordance.
 
 ## render.connections
 
@@ -233,33 +263,76 @@ the board — `READY TO RUN`, or `READY EXCEPT` with one what/unlocks line per e
 nothing back:** zero affordances, no verdict, no write — binding-change verdicts flow through `review.collect`
 items of kind `binding_change` (see `## review.collect`), never through this surface.
 
+For a declared write-scoped row, `tool` reports live inventory presence independently of the status pill. A present
+tool with missing replay/receipt evidence therefore renders with its tool named, `status: degraded`, and a consequence
+that says production writes remain disabled and close-out simulates. `connected` is reserved for a positively confirmed,
+production-eligible mapping; accepting a presence-only proposal cannot produce that label.
+
 ## render.setup_progress
 
-`progress_view = { mode: first-run|refresh|resume, sections[]: { id: process|messaging|assets|state,
-status: done|active|pending | proposed-changes(n), coverage_note? } }` — the section checklist
-`skills/setup-unbound.md` renders at its opening, after each section, on resume, and as the refresh audit
-view; nothing is re-evaluated at render time. The section-id enum is fixed in D9 order
-(`process | messaging | assets | state`) — the same enum `review.collect`'s `context_section` `task_id`
-slot carries. `proposed-changes(n)` is the refresh/audit status variant, consumed by Epic setup-3 with
+`progress_view = { mode: first-run|refresh|resume, sections[]: { id: process|messaging|assets|voice|state,
+status: done|active|pending | proposed-changes(n), title?, why?, coverage_note? } }` — the section
+checklist `skills/setup-unbound.md` renders at its opening, after each section, on resume, and as the
+refresh audit view; nothing is re-evaluated at render time. The section-id enum is fixed in D9 order
+(`process | messaging | assets | voice | state`) — the same enum `review.collect`'s `context_section`
+`task_id` slot carries. `proposed-changes(n)` is the refresh/audit status variant, consumed by Epic setup-3 with
 **no shape change**; `coverage_note` is an optional muted annotation (e.g. "mostly covered by deck").
+`title` and `why` are optional rep-facing strings — second person, present tense, one sentence per `why`,
+no internal noun (`run-state`, `predicate`, `artifact`, `enum`, `capability`, `slot`, `verdict`);
+`skills/setup-unbound.md` owns their values in its step-1 table and this file never restates them.
 Card text rules: one mode line (`first-run | refresh | resume`) at the top; one row per section, in D9
-order, carrying the section name, its status pill (`done | active | pending | proposed-changes(n)`), and
-the muted coverage note when present. **Render-only, conveys nothing back:** zero affordances, no
+order, carrying the section `title` as its heading, its status pill
+(`done | active | pending | proposed-changes(n)`), the muted `why` line when present, and the muted
+coverage note beneath it when present. `title` absent ⇒ the heading is the section `id` verbatim; `why`
+absent ⇒ its muted line is omitted entirely, the rule `coverage_note` already follows. The plain-Markdown
+section-status list carries both fields under those same absent-field rules — ADR-1 field parity.
+**Render-only, conveys nothing back:** zero affordances, no
 verdict, no write — section verdicts flow through `review.collect` items of kind `context_section` (see
 `## review.collect`), never through this surface.
 
 ## render.context_preview
 
-`preview_view = { section_id, drafted_content, provenance[]: { block_ref, label }, gaps[] }` — the
+`preview_view = { section_id, title?, why?, drafted_content, provenance[]: { block_ref, label },
+gaps[] }` — the
 drafted artifact `skills/setup-unbound.md` previews in its section loop, before each verdict; nothing is
 regenerated or altered at render time. `drafted_content` is the artifact **shaped like itself** — the
 thing being built, not a transcript of chat: a positioning block for `messaging`, the stage-ladder
-pipeline for `process`, the six-column asset table for `assets`. Provenance labels
+pipeline for `process`, the six-column asset table for `assets`.
+`title` and `why` are optional rep-facing strings — second person, present tense, one sentence per `why`,
+no internal noun (`run-state`, `predicate`, `artifact`, `enum`, `capability`, `slot`, `verdict`);
+`skills/setup-unbound.md` owns their values in its step-1 table and this file never restates them.
+Card text rules: the card heading is the `title`, with the muted `why` line directly beneath it and above
+the content area. `title` absent ⇒ the heading is the `section_id` verbatim; `why`
+absent ⇒ its muted line is omitted entirely, the rule `coverage_note` already follows. The plain-Markdown
+card carries both fields under those same absent-field rules — ADR-1 field parity. Provenance labels
 (`Evidence · <source> <locator>` / `Answer · rep`) are a **preview overlay only, never written to
-files** — the accepted artifact strips them; gaps render in the D13 blockquote voice and are the only
+files** — the accepted artifact strips them, and `title` and `why` are overlays under that same rule;
+gaps render in the D13 blockquote voice and are the only
 overlay content that persists (as D13 blockquotes in the written file). **Render-only, conveys nothing
 back:** zero affordances, no verdict, no write — verdicts never flow through this surface; they belong
 to `review.collect` items of kind `context_section` (see `## review.collect`).
+
+## render.source_intake
+
+`intake_view = { mode: first-run|resume|refresh, items[]: { id: sales-process|pitch-deck|positioning|brand|
+messaging-guide|website|asset-list|own-writing, ask, why, status: pending|provided|interview|skipped, note? } }` —
+the source-catalog checklist `skills/setup-unbound.md` renders when its step-2 intake opens and re-renders after each
+item's answer; nothing is re-evaluated at render time. The item-id enum is the step-2 catalog's eight ids, in table
+order. `ask` and `why` are required rep-facing strings — second person, present tense, one sentence per `why`, no
+internal noun (`run-state`, `predicate`, `artifact`, `enum`, `capability`, `slot`, `verdict`);
+`skills/setup-unbound.md` owns their values in its step-2 catalog table and this file never restates them. `note` is
+an optional muted annotation (e.g. "deck received", "no playbook") — the role `coverage_note` plays on
+`render.setup_progress`.
+Card text rules: one mode line (`first-run | resume | refresh`) at the top; one row per item, in catalog order,
+carrying that item's `ask` as its heading, its status pill (`pending | provided | interview | skipped`), the muted
+`why` line beneath it, and the muted `note` beneath that when present. `status` is required — an item carrying none
+is a caller bug, never a render-time default, because a silently-`pending` item is indistinguishable from an answered
+one. `note` absent ⇒ its muted line is omitted entirely, the rule `coverage_note` already follows. `ask`, `why` and
+`note` are HTML-escaped, the rule section titles and coverage notes already carry. A narrowed view — the managed
+path's single `own-writing` row, or resume's remaining items — is an ordinary use of this shape, never a variant. The
+plain-Markdown item-status list carries every field under those same rules — ADR-1 field parity.
+**Render-only, conveys nothing back:** zero affordances, no verdict, no write — intake answers are given in chat, and
+this surface produces no `review.collect` item of any kind.
 
 ## transcript.get (multi-source)
 
@@ -290,25 +363,11 @@ to `review.collect` items of kind `context_section` (see `## review.collect`).
 - **Write boundary.** Every provider is read-scope only; Zoom's `create_new_file_with_markdown` is a write tool and is
   **NOT bound** (ADR-4).
 
-## Binding table — declared future write gate (unbound)
-
-> **Declared-but-unbound.** The one named future write capability, carried here with its documented simulate fallback so
-> the boundary is explicit. It is **NOT BOUND** to any concrete tool in any runtime and has no `runtime/adapters/cowork.md`
-> row — this row **requests and configures no write scope** (ADR-4; the external write boundary stays closed).
-> `connect-tools` derives it like any other binding row and reports it `missing`/`degraded` with the simulate consequence.
-
-| Logical capability | Scope | Status / binding | Fallback | Consumed by |
-| --- | --- | --- | --- | --- |
-| `crm.write(crm_update)` — apply the field-level `crm_update` to the CRM (Growth / Epic G, FR28–FR34) | write (future) | **NOT BOUND** in any runtime — no concrete tool, no `runtime/adapters/cowork.md` row (write boundary closed, ADR-4) | **simulate** — persist the item's `drafts/YYYY-MM-DD-crm-update.md` + `render.crm_update` (informational); nothing written externally | `skills/pipeline/write-crm.md` (RESOLVE → APPLY — simulate branch) |
-
-Binding `crm.write` is **deferred pending an ADR-4 amendment** (Epic G activation); until then `write-crm`'s RESOLVE
-always selects the simulate fallback (positive-confirmation-or-fallback, per the resolution rule above). `crm.read` /
-`crm.write_draft` remain in **Out of scope** below — `crm.write` is the *named, still-closed* gate, not an opened write
-scope.
 
 ## Out of scope (do NOT add here)
 
-- Any **external write-scoped** capability: `email.queue_draft`, `gmail.send`, `gmail.modify`, `gmail.label`,
-  `crm.read`, `crm.write_draft` (Growth FR28–FR34). Gmail is list-and-read only in the discovery window — never send,
-  reply, draft-into-Gmail, label, archive, or modify.
+- Any **external write-scoped** capability beyond the ones a binding table above *explicitly declares*:
+  `email.queue_draft`, `gmail.send`, `gmail.modify`, `gmail.label` (Growth FR28–FR34). Gmail is
+  list-and-read only — the discovery window in the run loop, the rep's own SENT mail at setup — never
+  send, reply, draft-into-Gmail, label, archive, or modify.
 - Bindings/adapters for other runtimes (ChatGPT, Copilot) — deferred, per the indirection rule.

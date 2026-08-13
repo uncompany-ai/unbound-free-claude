@@ -6,13 +6,13 @@
   `setup-unbound` presents in its section loop, before each verdict.
   Rendered as ONE visualize widget fragment per call: one top-level <div>,
   first child h2.sr-only (widget-fragment constraints,
-  runtime/adapters/cowork.md "Visualize protocol"). Inline styles only;
+  resources/tool-bindings.md "Visualize protocol"). Inline styles only;
   Cowork CSS vars with hex fallbacks.
 
   A read-only preview of the `preview_view` object the extraction pass
   assembled — nothing is regenerated or altered at render time.
-  `preview_view` = { section_id, drafted_content, provenance[]: { block_ref,
-  label }, gaps[] }. `drafted_content` is the artifact SHAPED LIKE ITSELF —
+  `preview_view` = { section_id, title?, why?, drafted_content, provenance[]:
+  { block_ref, label }, gaps[] }. `drafted_content` is the artifact SHAPED LIKE ITSELF —
   the thing being built, not a transcript of chat. Content shape is keyed to
   `section_id` (the D9 enum):
     messaging → POSITIONING BLOCK: labeled prose blocks (positioning
@@ -32,8 +32,15 @@
   <what's missing>. Fill via a setup-unbound refresh.") and are the only
   overlay content that persists (as D13 blockquotes in the written file).
 
-  LAYOUT (fixed order): header row (section title + amber "preview · not
-  written" pill) · content area (one of the per-section_id shapes above,
+  `title` and `why` are optional rep-facing strings; skills/setup-unbound.md
+  owns their values and this template only renders them. `title` absent ⇒
+  render the `section_id` verbatim as the card heading; `why` absent ⇒ omit
+  its muted <p> entirely. Both are PREVIEW-ONLY OVERLAYS under the same rule
+  as the provenance chips — never written into company/* or state/*.
+
+  LAYOUT (fixed order): header row (card title + amber "preview · not
+  written" pill, then the muted why line when the view carries one) ·
+  content area (one of the per-section_id shapes above,
   each drafted block carrying its provenance chip) · gap callouts (one per
   gaps[] entry; omit the area entirely when gaps is []).
 
@@ -54,18 +61,25 @@
 -->
 <div>
 <h2 class="sr-only">{{SR_DESCRIPTION}}</h2>
-<!-- {{SR_DESCRIPTION}} names the section + preview state for screen
-     readers, e.g. "Preview of the drafted messaging section: positioning
-     statement, three proof points, one gap; nothing written yet" -->
+<!-- {{SR_DESCRIPTION}} names the section by its `title` + the preview state
+     for screen readers, e.g. "Preview of the drafted <messaging title>:
+     positioning statement, three proof points, one gap; nothing written
+     yet" — the view's own `title` string, never the section id. A view with
+     no `title` is named by its `section_id`. The `why` line stays out of
+     this label. -->
 <div style="background:var(--surface-2); border:0.5px solid var(--border); border-radius:12px; padding:1.25rem;">
 
   <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
     <p style="font-size:14px; font-weight:600; margin:0;">{{SECTION_TITLE}}</p>
     <span style="background:var(--c-amber-50,#FAEEDA); color:var(--c-amber-800,#633806); font-size:11px; font-weight:500; padding:3px 10px; border-radius:999px; white-space:nowrap;">preview &middot; not written</span>
+    <p style="font-size:12px; color:var(--text-muted); margin:0; flex-basis:100%;">{{SECTION_WHY}}</p>
   </div>
-  <!-- {{SECTION_TITLE}} names the drafted artifact, keyed to section_id:
-       "Sales process — company/process.md" · "Messaging — company/messaging.md" ·
-       "Assets — company/assets.md" · "Run state — state/run-state.yaml" -->
+  <!-- {{SECTION_TITLE}} is the view's `title` — the rep-facing name of the
+       drafted artifact, declared in skills/setup-unbound.md's step-1 table
+       and passed in verbatim; the `section_id` verbatim when `title` is
+       absent. {{SECTION_WHY}} is the view's `why`, rendered as the muted
+       full-width line beneath the heading; omit that whole <p> when the
+       view carries no `why`. Both are HTML-escaped. -->
 
   <!--
     PROVENANCE CHIP — the shared overlay idiom used inside every content

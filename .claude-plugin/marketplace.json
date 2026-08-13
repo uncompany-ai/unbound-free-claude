@@ -5,7 +5,7 @@
     {
       "name": "unbound",
       "source": "./plugins/unbound",
-      "description": "File-native sales-execution agent for Claude Cowork — freemium tier: the run-unbound daily orchestrator plus the standalone setup-unbound, connect-tools, and collect-tasks skills. A subtractive cut of the base with pro-only features removed. Built from core v1.1.0.",
+      "description": "File-native sales-execution agent for Claude Cowork — freemium tier: the run-unbound daily orchestrator plus the standalone setup-unbound, connect-tools, and collect-tasks skills. A subtractive cut of the base with pro-only features removed. Built from core v1.4.0.",
       "category": "sales"
     }
   ]

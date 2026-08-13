@@ -9,10 +9,22 @@ sales-execution agent by [UnCompany](https://uncompany.ai). It serves the free t
 
 ## Install
 
-1. In Claude Cowork: **Customize → Plugins → Add marketplace**, then enter `uncompany-ai/unbound-free`.
+1. In Claude Cowork: **Customize → Plugins → Add marketplace**, then enter `uncompany-ai/unbound-free-claude`.
 2. Install `unbound@uncompany`.
 
 Plugin support in Cowork is in beta and available on paid Claude plans.
+
+## ChatGPT Work
+
+This repository also carries the ChatGPT Work build of the same tier, under `chatgpt/` — its
+marketplace entry at `chatgpt/.agents/plugins/marketplace.json` and its plugin tree at
+`chatgpt/plugins/unbound/`. The two host surfaces are published together, from one core, in one
+run, so neither can sit at an older core than the other.
+
+**Installing it.** Its entry declares `policy.installation: "AVAILABLE"`. Add this repository as a
+marketplace in ChatGPT Work and install the plugin from it, the same route proven on 2026-08-12
+against a private GitHub marketplace repo. This tree declares no app dependencies, which does not
+affect installation — an app map adds declared dependencies rather than permitting the install.
 
 ## Updates
 
@@ -22,7 +34,7 @@ this repository, so every publish here is detectable as a new version.
 
 ## Provenance
 
-The published trees are the gate-verified build artifacts of core `v1.1.0`.
+The published trees are the gate-verified build artifacts of core `v1.4.0`.
 
 ## Maintenance
 

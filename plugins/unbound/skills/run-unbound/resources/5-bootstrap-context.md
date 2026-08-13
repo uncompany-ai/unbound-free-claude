@@ -39,6 +39,7 @@ type: <account|project>        # mirrors namespace
 slug: <slug>                   # exactly as supplied by classify-work
 name: <entity name>            # from available signal, never invented
 domains: []                    # accounts only; OPTIONAL — list of email-domain strings (rep-editable). Used by discover-events for deterministic prospect/customer matching of inbound email senders. Left empty at bootstrap; rep adds entries when they want a sender domain to deterministically route to this slug. discover-events reads it; bootstrap-context and work-account do not write to it.
+crm_ref: <crm record ref>      # accounts only; OPTIONAL — opaque CRM record reference, inert data (rep-editable). Names the one CRM record this account maps to, so a CRM read is keyed deterministically instead of matched by name or domain. OMITTED ENTIRELY at bootstrap — the rep adds the key if and when they want that mapping. work-account reads it; bootstrap-context and work-account do not write to it. Absent (the normal case) is valid and simply means no CRM read is attempted.
 stage: <enum or NEEDS-REP-INPUT>  # accounts only; omit for projects
 stakeholders:
   - { name: <name>, role: <role>, champion: <true|false> }
@@ -61,7 +62,10 @@ flag `NEEDS-REP-INPUT` when not confidently inferrable — never guess. Projects
 `stage` and `competitive_threats` entirely. `domains:` is rep-authored, not bootstrapped: leave
 it as the empty list `[]` on accounts (omit entirely for projects). Never auto-populate
 `domains:` from the call transcript or from the email sender's domain — the rep curates which
-sender domains deterministically route to a given slug.
+sender domains deterministically route to a given slug. `crm_ref:` follows that same rule one step
+further: omit the key entirely at bootstrap, on accounts and projects alike, and never auto-populate
+it from a transcript, an email, an account name, or a domain — the rep authors the CRM mapping or
+there is none, and there being none is the ordinary case.
 
 **4 — Ground everything; surface gaps.** Every populated field traces to the grounding source (the
 `content` of a `present` evidence entry, plus pasted info in either
@@ -106,7 +110,7 @@ fields.
 - Never create a duplicate context.md on re-encounter; never enrich/append at bootstrap.
 - Never write any file other than the one context.md; never touch run-state/events/last_run.
 - Never guess/default a stage; never pre-fill open_questions/competitive_threats/last_next_step with guesses. Email-grounded bootstrap follows the same stage rule — set `stage` only on explicit email-body evidence mapping to a `company/process.md` enum token; otherwise flag `NEEDS-REP-INPUT`.
-- Never auto-populate `domains:` — it is rep-authored. Bootstrap leaves it empty on accounts; omit entirely on projects.
+- Never auto-populate `domains:` or `crm_ref:` — both are rep-authored. Bootstrap leaves `domains:` empty on accounts and omits it entirely on projects; it omits `crm_ref:` entirely on both, and an absent `crm_ref:` is valid — it simply means no CRM read is attempted.
 - Never assume a call exists for an email-grounded item. When the existence check (Step 1) confirms no `context.md` exists, the email body IS the grounding source — note that explicitly in `## Summary`; never fabricate a transcript that wasn't there.
 - Never read a `missing` entry's `content` — there is none. An item whose evidence all came back `missing` still gets its context.md, grounded in metadata with the gap stated; refusing to create one, or filling it with invented detail, are both worse than a thin honest file.
 - Never bootstrap an item the rep did not select — this step runs once per run, on the one selected item.

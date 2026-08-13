@@ -70,7 +70,7 @@ checkbox write-back is the explicit SET-STATUS action in `work-account`, not par
 
 > This is the **standalone** Cowork build of collect-tasks. The logical capability map
 > (`render.tasks` and friends) ships in this same skill folder as `resources/tool-bindings.md`,
-> and the interactive card-stack render for `render.tasks` is pinned by
-> `resources/templates/task-plan-widget.html`. Resolve capabilities from those bundled copies —
-> do not expect a `runtime/` tree. All data paths (`accounts/`, `projects/`, `state/`) remain
-> relative to the working directory Cowork is operating in (the `unbound/` tree).
+> and the pinned widget layouts ship under `resources/templates/`. Resolve capabilities from
+> those bundled copies — do not expect a `runtime/` tree. All data paths (`accounts/`,
+> `projects/`, `state/`) remain relative to the working directory Cowork is operating in (the
+> `unbound/` tree).

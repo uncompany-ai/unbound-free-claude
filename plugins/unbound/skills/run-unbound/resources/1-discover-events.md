@@ -5,8 +5,8 @@ tier: all
 ---
 # discover-events
 
-Discovery step of an Unbound run (composition slot 1). Given `last_run`, `timezone`, and an optional
-`window_upper_edge` passed by the orchestrator, list events from configured sources (calendar +
+Discovery step of an Unbound run (composition slot 1). Given required `last_run`, `timezone`, and
+`discovery_until` values passed by the orchestrator, list events from configured sources (calendar +
 unanswered email threads) inside the discovery window, classify ambiguity per source with bias
 toward listing, attach a `suggested_slug` to email events whose sender confidently matches a
 known account, and surface ambiguous events for the rep to judge. Return an in-memory
@@ -18,7 +18,7 @@ any external write.
 
 ## Reads
 
-- `last_run` (ISO 8601 with offset), `timezone` (IANA), optional `window_upper_edge` (resolved ISO 8601 with offset) — all passed by the orchestrator; do not re-read `state/run-state.yaml`.
+- `last_run` (ISO 8601 with offset), `timezone` (IANA), and `discovery_until` (resolved ISO 8601 with offset) — all required and passed by the orchestrator; do not re-read `state/run-state.yaml`.
 - Logical capability `calendar.list_events_since(ts) -> [event{ title, start, end, attendees, ref }]` — read scope only; never a concrete tool name.
 - Logical capability `email.list_unanswered_threads(ts) -> [thread{ thread_ref, subject, participants[], last_message_at (ISO 8601 with offset), latest_external_message_body }]` — read scope only; never a concrete tool name. The hard pre-filter (INBOX-only; skip `CATEGORY_PROMOTIONS` / `CATEGORY_SOCIAL` / `CATEGORY_UPDATES` / `SPAM` / `TRASH`; only threads where the rep has not replied last) lives in the binding's `q` parameter (`runtime/tool-bindings.md`), not in this skill — the skill never re-applies it.
 - Optional `accounts/<slug>/context.md` frontmatter (per known account) — `domains:` (optional rep-authored list of email-domain strings), `name`, `stakeholders[].name`, and the `## Summary` body. Read in a **single best-effort pass over every known account, once per run**, to build the prospect-routing index the matching step queries — one read per account for the whole run, never one per account per email candidate. Absence of any field = no signal for that slug (never an error).
@@ -28,10 +28,11 @@ any external write.
 **1 — List candidates from both sources, concurrently.** Issue BOTH
 `calendar.list_events_since(last_run)` and `email.list_unanswered_threads(last_run)` **together
 (parallel where supported)** — neither call takes any input from the other's result, so neither
-waits on the other and the step costs about one list call rather than two. If `last_run` or
-`timezone` is missing or unparseable, stop and tell the rep **before** issuing either call — never
-invent values or default the timezone. Never parse `scan_window` here (the orchestrator already
-resolved the upper edge).
+waits on the other and the step costs about one list call rather than two. Before issuing either
+call, validate `last_run`, `timezone`, and `discovery_until`, including that the resolved interval
+has `discovery_until > last_run`. If any value is missing or unparseable, or the interval is
+invalid, stop and tell the rep — never invent values, default the timezone, or query a partial
+window. Never parse `scan_window` here (the orchestrator already resolved the fixed cutoff).
 
 If **either** binding fails or errors, stop and surface the failure, naming whichever source
 failed — never silently fall back to the surviving one (that would hide a whole class of events
@@ -40,27 +41,30 @@ sent, never **how** a failure is handled: a failure on either side stops the run
 terms it would have if the calls had been sent one after the other, and a result already returned
 by the surviving source is discarded rather than used alone.
 
-**2 — Apply the discovery window (in-skill date math, in `timezone`).** The window is
-`(last_run, window_upper_edge]` — strictly after `last_run` (always), at/before
-`window_upper_edge` (only when passed). For each candidate, its `occurred_at` is the calendar
+**2 — Apply the discovery window (in-skill date math, in `timezone`).** The window is always
+`(last_run, discovery_until]` — strictly after `last_run` and at/before the required fixed cutoff.
+For each candidate, its `occurred_at` is the calendar
 `event.start` (calendar candidates) OR the email `last_message_at` (email candidates). Apply the
 same comparison to BOTH sources uniformly:
 
-1. Interpret `occurred_at`, `last_run`, and `window_upper_edge` in the run's `timezone`
+1. Interpret `occurred_at`, `last_run`, and `discovery_until` in the run's `timezone`
    (matters at day boundaries — not UTC, not server local).
 2. Keep only if `occurred_at` is strictly after `last_run`.
-3. When `window_upper_edge` is passed, additionally keep only if `occurred_at` is at or before
-   it; when omitted, apply no upper bound (unbounded above = now).
+3. Keep only if `occurred_at` is at or before `discovery_until`.
 4. Preserve `occurred_at` verbatim as full ISO 8601 with offset — do not reformat or truncate.
 
-Never silently drop a candidate from either source on the window step.
+A post-cutoff candidate is a normal exclusion, not an error and not a rep-facing warning; because
+the committed watermark is this same cutoff, the candidate remains eligible for the next window.
 
 **3 — Match email candidates to known accounts (prospect/customer matching).** Build the routing
 index **once**, then match every in-window email candidate against it.
 
 **Build the routing index before the matching loop.** In a single pass over the known accounts,
-read each `accounts/<slug>/context.md`'s frontmatter and `## Summary` exactly once and fold what
-they carry into two in-memory maps:
+read each `accounts/<slug>/context.md`'s frontmatter and `## Summary` — and nothing more of the
+file; the Activity Log body contributes nothing to the index — exactly once, issuing the
+per-account reads as **one batch (parallel where supported)**: each path resolves from the account
+listing alone, never from another read's content, so none waits on another and the pass costs
+about one read rather than one per account. Fold what they carry into two in-memory maps:
 
 - `domain → slug` — every entry of that account's `domains:` list, lowercased for comparison.
   This is the deterministic path (a) queries.
@@ -72,7 +76,9 @@ The index is constant for the run — the accounts on disk do not change while t
 flight — so it is built once, before the loop, and never rebuilt per candidate. An account
 carrying no `domains:`, no `stakeholders`, or no `## Summary` contributes nothing for that field
 and is otherwise indexed normally: absence of any field is no signal for that slug, never an
-error, and never a reason to stop the pass.
+error, and never a reason to stop the pass. Batching moves **when** the account reads are issued,
+never what the pass guarantees: the index is not complete, and the matching loop does not begin,
+until every account's read has landed or reported absent.
 
 Then, for each in-window email candidate, run this algorithm in order and stop at the first
 confident match:
@@ -159,11 +165,13 @@ working tree (and the rep's Gmail inbox) unchanged.
 
 ## Failure rules
 
-- Missing/unparseable `last_run` or `timezone` → stop and surface; never invent or default.
+- Missing/unparseable `last_run`, `timezone`, or `discovery_until`, or
+  `discovery_until <= last_run` → stop before either query and surface; never invent or default.
 - Either source binding fails or errors → stop and surface; never silently fall back to the
   other source (would hide events from the rep).
-- Never silently drop an event from either source — anything not confidently excluded is
-  listed (ambiguous if necessary).
+- Never silently drop an in-window event during ambiguity classification — anything not
+  confidently excluded is listed (ambiguous if necessary). Post-cutoff candidates are outside the
+  current window and defer normally.
 - Never re-apply the email hard pre-filter inside the skill body — it lives in the binding's
   `q` parameter (ADR-6 / Pattern 4 — runtime details stay out of skill prose).
 - Never mint a new slug at discovery — `classify-work` / rep-driven creation handles unknown
@@ -173,7 +181,7 @@ working tree (and the rep's Gmail inbox) unchanged.
 - Never reformat, truncate, or invent an `external_ref` — it is the durable re-fetch pointer, and a
   rewritten one silently breaks a later run's evidence recovery. A source object arriving with no
   ref is surfaced as a source-binding fault; never mint a placeholder `event_id` around it.
-- Never parse `scan_window` (the orchestrator resolves the upper edge before invoking this
+- Never parse `scan_window` (the orchestrator resolves `discovery_until` before invoking this
   skill).
 - Never name a concrete MCP tool inside this skill — both logical capabilities resolve via
   `runtime/tool-bindings.md` (ADR-6).
