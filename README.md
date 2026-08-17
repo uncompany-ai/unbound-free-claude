@@ -34,7 +34,7 @@ this repository, so every publish here is detectable as a new version.
 
 ## Provenance
 
-The published trees are the gate-verified build artifacts of core `v1.4.0`.
+The published trees are the gate-verified build artifacts of core `v2.1.0`.
 
 ## Maintenance
 
